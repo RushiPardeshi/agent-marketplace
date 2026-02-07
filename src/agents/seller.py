@@ -33,7 +33,8 @@ class SellerAgent(BaseAgent):
             f"Reply with a valid JSON object (use double quotes for keys/strings): {{\"offer\": <your_offer>, \"message\": \"<your_short_reasoning>\"}}. "
             f"IMPORTANT: Never go below your minimum price of ${self.min_price}. "
             f"If your calculated strategic offer is < ${self.min_price}, you MUST offer ${self.min_price} exactly. "
-            f"IMPORTANT: Never offer a price lower than the buyer's last offer. If the buyer's offer is acceptable, just repeat it to accept."
+            f"IMPORTANT: Never offer a price lower than the buyer's last offer. If the buyer's offer is acceptable, just repeat it to accept. "
+            f"IMPORTANT: Do not explicitly reveal your minimum price in your messages. Negotiate hard."
         )
 
     def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> dict:
@@ -54,5 +55,5 @@ class SellerAgent(BaseAgent):
         if result["offer"] < self.min_price:
             result["offer"] = self.min_price
             # Overwrite the message to prevent confusion
-            result["message"] = f"I cannot go lower than ${self.min_price}. (Adjusted from lower offer)"
+            result["message"] = f"I cannot go any lower than this. (Adjusted from lower offer)"
         return result

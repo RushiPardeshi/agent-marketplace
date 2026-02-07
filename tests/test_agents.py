@@ -48,7 +48,7 @@ def test_seller_agent_enforce_min_price(MockOpenAI):
     # Buyer offered 500. Rationality check passes (800 not < 500). Min price check catches it.
     result = agent.propose("context", 500, rounds_left=1, market_context="")
     assert result["offer"] == 900 # Should be clamped to min
-    assert "cannot go lower" in result["message"]
+    assert "cannot go any lower" in result["message"]
 
 @patch("src.agents.base.OpenAI")
 def test_seller_agent_rationality_check(MockOpenAI):
@@ -86,7 +86,7 @@ def test_buyer_agent_enforce_max_price(MockOpenAI):
     # Seller offered 1500. Rationality check passes (1300 not > 1500). Max price check catches it.
     result = agent.propose("context", 1500, rounds_left=1, market_context="")
     assert result["offer"] == 1200 # Should be clamped to max
-    assert "cannot go higher" in result["message"]
+    assert "cannot go any higher" in result["message"]
 
 @patch("src.agents.base.OpenAI")
 def test_buyer_agent_rationality_check(MockOpenAI):

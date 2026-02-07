@@ -33,7 +33,8 @@ class BuyerAgent(BaseAgent):
             f"IMPORTANT: Your offer MUST NEVER exceed ${self.max_price}. "
             f"If your calculated strategic offer is > ${self.max_price}, you MUST offer ${self.max_price} exactly."
             f"If you are about to exceed it, just offer ${self.max_price}. "
-            f"IMPORTANT: Never offer a price higher than the seller's last offer. If the seller's offer is acceptable, just repeat it to accept."
+            f"IMPORTANT: Never offer a price higher than the seller's last offer. If the seller's offer is acceptable, just repeat it to accept. "
+            f"IMPORTANT: Do not explicitly reveal your maximum budget in your messages. Negotiate hard."
         )
 
     def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> dict:
@@ -54,5 +55,5 @@ class BuyerAgent(BaseAgent):
         if result["offer"] > self.max_price:
             result["offer"] = self.max_price
             # Overwrite the message to prevent confusion
-            result["message"] = f"I cannot go higher than ${self.max_price}. (Adjusted from higher offer)"
+            result["message"] = f"I cannot go any higher than this. (Adjusted from higher offer)"
         return result
