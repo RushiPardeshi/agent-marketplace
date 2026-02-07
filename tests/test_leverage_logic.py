@@ -1,3 +1,5 @@
+from src.services.negotiation import NegotiationService
+from src.models.schemas import NegotiationRequest, Product
 
 def test_leverage_calculation():
     service = NegotiationService()
