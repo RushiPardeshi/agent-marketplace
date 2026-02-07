@@ -6,3 +6,4 @@ uvicorn
 pytest
 pytest-mock
 httpx
+sqlalchemy==2.0.*

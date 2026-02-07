@@ -24,3 +24,15 @@ class NegotiationResult(BaseModel):
     final_price: Optional[float] = None
     turns: List[NegotiationTurn]
     reason: Optional[str] = None
+    
+class ListingCreate(BaseModel):
+    title: str
+    description: str | None = None
+    price: float
+    category: str | None = None
+
+class ListingOut(ListingCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
