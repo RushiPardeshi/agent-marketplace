@@ -36,3 +36,7 @@ class ListingOut(ListingCreate):
 
     class Config:
         from_attributes = True
+
+class AIResponse(BaseModel):
+    offer: float
+    message: str
