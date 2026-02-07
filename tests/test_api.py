@@ -16,7 +16,9 @@ def test_negotiate_endpoint_success(mock_negotiate):
     payload = {
         "product": {"name": "Laptop", "listing_price": 1200},
         "seller_min_price": 900,
-        "buyer_max_price": 1000
+        "buyer_max_price": 1000,
+        "active_competitor_sellers": 1,
+        "active_interested_buyers": 5
     }
     response = client.post("/negotiate", json=payload)
     assert response.status_code == 200
@@ -30,7 +32,9 @@ def test_negotiate_endpoint_failure(mock_negotiate):
     payload = {
         "product": {"name": "Laptop", "listing_price": 1200},
         "seller_min_price": 900,
-        "buyer_max_price": 1000
+        "buyer_max_price": 1000,
+        "active_competitor_sellers": 1,
+        "active_interested_buyers": 5
     }
     response = client.post("/negotiate", json=payload)
     assert response.status_code == 500

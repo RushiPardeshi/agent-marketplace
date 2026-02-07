@@ -31,7 +31,7 @@ def test_negotiation_agreement(mock_buyer, mock_seller):
         initial_seller_offer=1000,
         initial_buyer_offer=950
     )
-    service = NegotiationService(max_rounds=5)
+    service = NegotiationService()
     result = service.negotiate(req)
     assert result.agreed
     assert result.final_price == 950
@@ -53,13 +53,15 @@ def test_negotiation_deadlock(mock_buyer, mock_seller):
         seller_min_price=1200,
         buyer_max_price=800,
         initial_seller_offer=1200,
-        initial_buyer_offer=800
+        initial_buyer_offer=800,
+        seller_patience=5,
+        buyer_patience=5
     )
-    service = NegotiationService(max_rounds=5)
+    service = NegotiationService()
     result = service.negotiate(req)
     assert not result.agreed
     assert result.final_price is None
-    assert "No agreement" in result.reason
+    assert "Negotiation ended without agreement" in result.reason
     save_output("test_negotiation_deadlock", result)
 
 
@@ -78,21 +80,39 @@ import itertools
     (900, 800, 850),
 ])
 def test_negotiation_permutations(mock_buyer, mock_seller, buyer_max, seller_min, listing_price):
-    # Buyer always offers buyer_max, seller always offers seller_min
-    mock_buyer.side_effect = [{"offer": buyer_max, "message": f"My max is {buyer_max}"}] * 5
-    mock_seller.side_effect = [{"offer": seller_min, "message": f"My min is {seller_min}"}] * 5
+    if buyer_max >= seller_min:
+        # Success case: Agents converge to seller_min
+        # Buyer: 1000 -> Seller: 900 -> Buyer: 900 (Accept)
+        mock_buyer.side_effect = [
+            {"offer": buyer_max, "message": f"My max is {buyer_max}"},
+            {"offer": seller_min, "message": "I accept your price."}
+        ]
+        mock_seller.side_effect = [
+            {"offer": seller_min, "message": f"My min is {seller_min}"}
+        ]
+    else:
+        # Failure case: Agents act stubborn
+        # Increase mock count to cover "Patient" scenarios (15+ rounds)
+        mock_buyer.side_effect = [{"offer": buyer_max, "message": f"My max is {buyer_max}"}] * 20
+        mock_seller.side_effect = [{"offer": seller_min, "message": f"My min is {seller_min}"}] * 20
+        
     req = NegotiationRequest(
         product=Product(name="TestProduct", listing_price=listing_price),
         seller_min_price=seller_min,
         buyer_max_price=buyer_max,
         initial_seller_offer=seller_min,
-        initial_buyer_offer=buyer_max
+        initial_buyer_offer=buyer_max,
+        # Ensure deterministic patience (Balanced/Low Leverage)
+        active_competitor_sellers=1, 
+        active_interested_buyers=1
     )
-    service = NegotiationService(max_rounds=5)
+    service = NegotiationService()
     result = service.negotiate(req)
+    
     # Save output for each permutation
     test_name = f"test_negotiation_perm_{buyer_max}_{seller_min}_{listing_price}"
     save_output(test_name, result)
+    
     # Assert agreement only if buyer_max >= seller_min
     if buyer_max >= seller_min:
         assert result.agreed
