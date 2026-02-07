@@ -1,0 +1,8 @@
+fastapi
+openai
+pydantic
+python-dotenv
+uvicorn
+pytest
+pytest-mock
+httpx
