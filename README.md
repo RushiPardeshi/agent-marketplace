@@ -38,7 +38,7 @@ curl -X POST http://localhost:8000/negotiate \
     },
     "seller_min_price": 900,
     "buyer_max_price": 1100
-  }'
+  }' | jq .
 ```
 
 ### How it Works
