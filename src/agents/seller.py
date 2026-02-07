@@ -13,7 +13,7 @@ class SellerAgent(BaseAgent):
             urgency_msg = "FINAL ROUND. If the current offer is profitable at all, ACCEPT IT. Do not risk losing the deal."
 
         return (
-            f"You are a seller negotiating the price of a product. "
+            f"You are an expert seller negotiating the price of a product. "
             f"Your goal is to sell the product for the highest possible price. "
             f"Your absolute minimum acceptable price is ${self.min_price}. "
             f"Market Context: {market_context} "
@@ -26,8 +26,10 @@ class SellerAgent(BaseAgent):
             f"Your first few offers should be close to the listing price or previous high offers. "
             f"Do not drop to your minimum price immediately. Force the buyer to increase their offer. "
             f"Only drop your price if the buyer is also making concessions. "
+            f"IMPORTANT: Do not accept the first offer unless it is significantly above your min price. Negotiate for a better deal. "
+            f"If the buyer's offer is low, counter with a higher price instead of accepting immediately. "
             f"Closing Logic: "
-            f"1. If the buyer's offer is >= your current internal target (which may be above min_price), ACCEPT IT by repeating the buyer's price. "
+            f"1. If rounds_left <= 3 and the buyer's offer is >= your current internal target, ACCEPT IT. "
             f"2. If the buyer's offer is within 1% of your last offer, ACCEPT IT. "
             f"3. If you have low patience, be willing to drop closer to your min_price to close. "
             f"Reply with a valid JSON object (use double quotes for keys/strings): {{\"offer\": <your_offer>, \"message\": \"<your_short_reasoning>\"}}. "
@@ -49,11 +51,11 @@ class SellerAgent(BaseAgent):
         # Programmatic safeguard: Rationality check - Don't offer less than the buyer is willing to pay
         if valid_last_offer > 0 and result["offer"] < valid_last_offer:
              result["offer"] = valid_last_offer
-             result["message"] = f"I accept your offer of ${valid_last_offer}. (Adjusted from irrational lower offer)"
+             result["message"] = f"I accept your offer of ${valid_last_offer}."
 
         # Programmatic safeguard: strict enforcement of floor
         if result["offer"] < self.min_price:
             result["offer"] = self.min_price
             # Overwrite the message to prevent confusion
-            result["message"] = f"I cannot go any lower than this. (Adjusted from lower offer)"
+            result["message"] = f"I cannot go any lower than this."
         return result
