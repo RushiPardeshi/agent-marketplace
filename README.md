@@ -41,6 +41,50 @@ curl -X POST http://localhost:8000/negotiate \
   }' | jq .
 ```
 
+## Marketplace Listings (SQLite)
+
+This branch adds a simple SQLite-backed listings store to support a dummy marketplace.
+
+### What was added
+- SQLite database (`app.db`) created automatically on server startup
+- `Listing` table + seed data (10 dummy listings)
+- CRUD-style endpoints to fetch/create listings
+- Simple keyword search via query param `q`
+
+### How to test
+- Open Swagger UI: `http://127.0.0.1:8000/docs`
+
+- List all dummy listings:
+  ```sh
+  curl http://127.0.0.1:8000/listings
+  ```
+
+- Search listings (title/description):
+  ```sh
+  curl "http://127.0.0.1:8000/listings?q=iphone"
+  ```
+
+- Get a listing by id:
+  ```sh
+  curl http://127.0.0.1:8000/listings/1
+  ```
+
+- Create a new listing:
+  ```sh
+  curl -X POST http://127.0.0.1:8000/listings \
+    -H "Content-Type: application/json" \
+    -d '{
+      "title": "Standing Desk",
+      "description": "Electric, works great",
+      "price": 180,
+      "category": "furniture"
+    }'
+  ```
+
+### Notes
+- Seeding runs only if the `listings` table is empty. To re-seed during development, delete `app.db` and restart the server.
+- `app.db` is ignored via `.gitignore`.
+
 ### How it Works
 1. **Listing**: The negotiation starts with the Seller's `listing_price`.
 2. **Haggling**:
