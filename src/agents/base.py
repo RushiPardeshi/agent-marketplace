@@ -21,7 +21,7 @@ class BaseAgent:
             temperature=self.temperature,
             max_tokens=150,
         )
-        content = response.choices[0].message["content"].strip()
+        content = response.choices[0].message.content.strip()
         # Expecting agent to return a price and a message
         # Example: {"offer": 950, "message": "I can offer at $950 because..."}
         try:

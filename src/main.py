@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from src.models.schemas import NegotiationRequest, NegotiationResult
 from src.services.negotiation import NegotiationService
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI()
 
