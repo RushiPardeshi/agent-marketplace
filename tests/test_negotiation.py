@@ -31,7 +31,7 @@ def test_negotiation_agreement(mock_buyer, mock_seller):
         initial_seller_offer=1000,
         initial_buyer_offer=950
     )
-    service = NegotiationService(max_rounds=5)
+    service = NegotiationService()
     result = service.negotiate(req)
     assert result.agreed
     assert result.final_price == 950
@@ -55,7 +55,7 @@ def test_negotiation_deadlock(mock_buyer, mock_seller):
         initial_seller_offer=1200,
         initial_buyer_offer=800
     )
-    service = NegotiationService(max_rounds=5)
+    service = NegotiationService()
     result = service.negotiate(req)
     assert not result.agreed
     assert result.final_price is None

@@ -5,17 +5,22 @@ from src.agents.buyer import BuyerAgent
 
 def test_seller_agent_prompt():
     agent = SellerAgent(min_price=900)
-    prompt = agent.build_prompt("context", 950)
+    prompt = agent.build_prompt("context", 950, rounds_left=5, market_context="High demand")
     assert "minimum acceptable price is $900" in prompt
     assert "context" in prompt
     assert "last offer from the buyer was $950" in prompt
+    assert "You have 5 rounds" in prompt
+    assert "High demand" in prompt
 
 def test_buyer_agent_prompt():
     agent = BuyerAgent(max_price=1200)
-    prompt = agent.build_prompt("context", 1100)
+    prompt = agent.build_prompt("context", 1100, rounds_left=2, market_context="High supply")
     assert "maximum budget is $1200" in prompt
     assert "context" in prompt
     assert "last offer from the seller was $1100" in prompt
+    assert "You have 2 rounds" in prompt
+    assert "running out of patience" in prompt
+    assert "High supply" in prompt
 
 @patch("src.agents.base.OpenAI")
 def test_seller_agent_propose(MockOpenAI):
@@ -25,7 +30,7 @@ def test_seller_agent_propose(MockOpenAI):
     mock_client.chat.completions.create.return_value = mock_response
     
     agent = SellerAgent(min_price=900)
-    result = agent.propose("context", 1000)
+    result = agent.propose("context", 1000, rounds_left=10, market_context="")
     assert result["offer"] == 950
     assert "Best I can do" in result["message"]
 
@@ -37,7 +42,7 @@ def test_seller_agent_enforce_min_price(MockOpenAI):
     mock_client.chat.completions.create.return_value = mock_response
     
     agent = SellerAgent(min_price=900)
-    result = agent.propose("context", 1000)
+    result = agent.propose("context", 1000, rounds_left=1, market_context="")
     assert result["offer"] == 900 # Should be clamped to min
     assert "cannot go lower" in result["message"]
 
@@ -49,7 +54,7 @@ def test_buyer_agent_propose(MockOpenAI):
     mock_client.chat.completions.create.return_value = mock_response
     
     agent = BuyerAgent(max_price=1200)
-    result = agent.propose("context", 1100)
+    result = agent.propose("context", 1100, rounds_left=10, market_context="")
     assert result["offer"] == 1000
     assert "final offer" in result["message"]
 
@@ -61,6 +66,6 @@ def test_buyer_agent_enforce_max_price(MockOpenAI):
     mock_client.chat.completions.create.return_value = mock_response
     
     agent = BuyerAgent(max_price=1200)
-    result = agent.propose("context", 1100)
+    result = agent.propose("context", 1100, rounds_left=1, market_context="")
     assert result["offer"] == 1200 # Should be clamped to max
     assert "cannot go higher" in result["message"]

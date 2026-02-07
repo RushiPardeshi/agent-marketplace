@@ -12,12 +12,12 @@ class BaseAgent:
         self.temperature = settings.TEMPERATURE
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-    def build_prompt(self, context: str, last_offer: float) -> str:
+    def build_prompt(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> str:
         # To be implemented in subclasses
         raise NotImplementedError
 
-    def propose(self, context: str, last_offer: float) -> dict:
-        prompt = self.build_prompt(context, last_offer)
+    def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> dict:
+        prompt = self.build_prompt(context, last_offer, rounds_left, market_context)
         try:
             response = self.client.chat.completions.create(
                 model=self.model,

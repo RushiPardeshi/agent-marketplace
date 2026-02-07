@@ -5,13 +5,21 @@ class SellerAgent(BaseAgent):
         super().__init__(role="seller", constraints={"min_price": min_price})
         self.min_price = min_price
 
-    def build_prompt(self, context: str, last_offer: float) -> str:
+    def build_prompt(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> str:
+        urgency_msg = ""
+        if rounds_left <= 2:
+            urgency_msg = "You are running out of patience. You should try to close the deal soon."
+        if rounds_left == 1:
+            urgency_msg = "This is your FINAL offer. If the buyer does not meet your terms, the negotiation will end. Be firm but realistic."
+
         return (
             f"You are a seller negotiating the price of a product. "
             f"Your goal is to sell the product for the highest possible price. "
             f"Your absolute minimum acceptable price is ${self.min_price}. "
+            f"Market Context: {market_context} "
             f"The negotiation context so far: {context}. "
             f"The last offer from the buyer was ${last_offer}. "
+            f"You have {rounds_left} rounds of negotiation patience left. {urgency_msg} "
             f"Strategy: Start high and concede slowly. "
             f"Your first few offers should be close to the listing price or previous high offers. "
             f"Do not drop to your minimum price immediately. Force the buyer to increase their offer. "
@@ -21,8 +29,8 @@ class SellerAgent(BaseAgent):
             f"Never go below your minimum price of ${self.min_price}."
         )
 
-    def propose(self, context: str, last_offer: float) -> dict:
-        result = super().propose(context, last_offer)
+    def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> dict:
+        result = super().propose(context, last_offer, rounds_left, market_context)
         # Programmatic safeguard: strict enforcement of floor
         if result["offer"] < self.min_price:
             result["offer"] = self.min_price
