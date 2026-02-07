@@ -51,11 +51,26 @@ class BuyerAgent(BaseAgent):
         # Programmatic safeguard: Rationality check - Don't offer more than the seller is asking
         if valid_last_offer > 0 and result["offer"] > valid_last_offer:
              result["offer"] = valid_last_offer
-             result["message"] = f"I accept your offer of ${valid_last_offer}."
+             result["message"] = f"Deal. I accept ${valid_last_offer}."
 
         # Programmatic safeguard: strict enforcement of ceiling
         if result["offer"] > self.max_price:
             result["offer"] = self.max_price
             # Overwrite the message to prevent confusion
             result["message"] = f"I cannot go any higher than this."
+
+        # Sanitization: Prevent leaking max price or specific phrases
+        msg_lower = result["message"].lower()
+        max_price_val = float(self.max_price)
+        max_price_str = str(int(max_price_val)) if max_price_val.is_integer() else str(max_price_val)
+        
+        if (f"${max_price_str}" in result["message"]) or \
+           ("only go as high" in msg_lower) or \
+           ("maximum" in msg_lower):
+            result["message"] = "That's my best offer."
+
+        # Force explicit accept message if repeating offer
+        if valid_last_offer > 0 and abs(result["offer"] - valid_last_offer) < 0.01:
+             result["message"] = f"Deal. I accept ${valid_last_offer}."
+
         return result

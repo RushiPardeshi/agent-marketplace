@@ -42,6 +42,19 @@ class NegotiationService:
         seller_leverage = self._determine_leverage("seller", req)
         buyer_leverage = self._determine_leverage("buyer", req)
         
+        # Calculate Seller Target based on Leverage
+        listing = req.product.listing_price
+        # k factor determines how close to listing price the seller wants to stay
+        if seller_leverage == "high":
+            k = 0.85
+        elif seller_leverage == "medium":
+            k = 0.60
+        else: # low
+            k = 0.35
+            
+        seller_target = req.seller_min_price + (listing - req.seller_min_price) * k
+        seller_target = max(req.seller_min_price, min(seller_target, listing))
+        
         # Patience tracking (Dynamic or Override)
         seller_patience = req.seller_patience or self._calculate_initial_patience(seller_leverage)
         buyer_patience = req.buyer_patience or self._calculate_initial_patience(buyer_leverage)
@@ -71,6 +84,8 @@ class NegotiationService:
                     agreed = True
                     final_price = offer
                     reason = "Buyer accepted seller's previous offer."
+                    # Force explicit acceptance message
+                    turns[-1].message = f"Deal. I accept ${offer}."
                     break
                 
                 # Calculate Patience Cost for THIS agent based on THEIR move
@@ -99,11 +114,33 @@ class NegotiationService:
                 context += f"\nSeller offers ${offer}: {message}"
                 
                 if abs(offer - last_offer) < 0.01:
-                    agreed = True
-                    final_price = offer
-                    reason = "Seller accepted buyer's previous offer."
-                    break
-                    
+                    # Seller is trying to accept. Check if it meets their target.
+                    if last_offer >= seller_target:
+                        agreed = True
+                        final_price = offer
+                        reason = "Seller accepted buyer's previous offer."
+                        # Force explicit acceptance message
+                        turns[-1].message = f"Deal. I accept ${offer}."
+                        break
+                    else:
+                        # Seller tried to accept but it's below target. Override.
+                        # Ensure we don't just repeat the offer (which triggers acceptance)
+                        counter_offer = max(seller_target, last_offer + 1.0)
+                        
+                        # Update the turn and context with the forced counter-offer
+                        turns[-1].offer = counter_offer
+                        turns[-1].message = "I can't do that, but I can meet you here."
+                        
+                        # Update local variables for next loop
+                        offer = counter_offer
+                        last_offer = offer
+                        context += f" (Corrected to ${offer})"
+                        
+                        seller_patience -= 1
+                        agent_turn = "buyer"
+                        round_num += 1
+                        continue
+
                 seller_patience -= 1
                 
                 last_offer = offer
