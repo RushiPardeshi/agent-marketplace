@@ -5,7 +5,7 @@ class BuyerAgent(BaseAgent):
         super().__init__(role="buyer", constraints={"max_price": max_price})
         self.max_price = max_price
 
-    def build_prompt(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> str:
+    def build_prompt(self, context: str, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> str:
         urgency_msg = ""
         if rounds_left <= 2:
             urgency_msg = "You are running out of patience. If the seller's offer is within 5% of your target, ACCEPT IT immediately."
@@ -14,6 +14,7 @@ class BuyerAgent(BaseAgent):
 
         return (
             f"You are an expert buyer negotiating the price of a product. "
+            f"Product Description: {product_description} "
             f"Your goal is to purchase the product for the lowest possible price. "
             f"Your absolute maximum budget is ${self.max_price}. "
             f"Market Context: {market_context} "
@@ -32,6 +33,7 @@ class BuyerAgent(BaseAgent):
             f"2. If the seller's offer is within 1% of your last offer, ACCEPT IT. "
             f"3. If you have low patience, be willing to increase your offer closer to your max_price to close. "
             f"Reply with a valid JSON object (use double quotes for keys/strings): {{\"offer\": <your_offer>, \"message\": \"<your_short_reasoning>\"}}. "
+            f"IMPORTANT: Justify your offer based on market conditions and the product's value. Address the seller's previous arguments if any. "
             f"IMPORTANT: Your offer MUST NEVER exceed ${self.max_price}. "
             f"If your calculated strategic offer is > ${self.max_price}, you MUST offer ${self.max_price} exactly."
             f"If you are about to exceed it, just offer ${self.max_price}. "
@@ -39,8 +41,8 @@ class BuyerAgent(BaseAgent):
             f"IMPORTANT: Do not explicitly reveal your maximum budget in your messages. Negotiate hard."
         )
 
-    def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> dict:
-        result = super().propose(context, last_offer, rounds_left, market_context)
+    def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> dict:
+        result = super().propose(context, last_offer, rounds_left, market_context, product_description)
         
         # Ensure last_offer is a valid number before comparing
         try:

@@ -9,12 +9,12 @@ class BaseAgent:
         self.model = settings.OPENAI_MODEL
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-    def build_prompt(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> str:
+    def build_prompt(self, context: str, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> str:
         # To be implemented in subclasses
         raise NotImplementedError
 
-    def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> dict:
-        prompt = self.build_prompt(context, last_offer, rounds_left, market_context)
+    def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> dict:
+        prompt = self.build_prompt(context, last_offer, rounds_left, market_context, product_description)
         response = self.client.responses.parse(
                 model=self.model,
                 input=[{"role": "system", "content": prompt}],

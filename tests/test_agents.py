@@ -28,8 +28,13 @@ def test_buyer_agent_prompt():
 def test_seller_agent_propose(MockOpenAI):
     # Setup the mock client and its response
     mock_client = MockOpenAI.return_value
-    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 950, 'message': 'Best I can do.'}"})})]})
-    mock_client.chat.completions.create.return_value = mock_response
+    
+    # Mock output_parsed object with model_dump
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 950, "message": "Best I can do."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
     
     agent = SellerAgent(min_price=900)
     # Buyer offered 900. Seller proposes 950. Rationality check passes (950 not < 900).
@@ -41,8 +46,12 @@ def test_seller_agent_propose(MockOpenAI):
 def test_seller_agent_enforce_min_price(MockOpenAI):
     # Test safeguard: Model tries to offer 800 (below min 900)
     mock_client = MockOpenAI.return_value
-    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 800, 'message': 'Take it or leave it.'}"})})]})
-    mock_client.chat.completions.create.return_value = mock_response
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 800, "message": "Take it or leave it."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
     
     agent = SellerAgent(min_price=900)
     # Buyer offered 500. Rationality check passes (800 not < 500). Min price check catches it.
@@ -54,8 +63,12 @@ def test_seller_agent_enforce_min_price(MockOpenAI):
 def test_seller_agent_rationality_check(MockOpenAI):
     # Test safeguard: Model tries to offer 950, but Buyer already offered 1000.
     mock_client = MockOpenAI.return_value
-    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 950, 'message': 'I am generous.'}"})})]})
-    mock_client.chat.completions.create.return_value = mock_response
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 950, "message": "I am generous."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
     
     agent = SellerAgent(min_price=900)
     result = agent.propose("context", 1000, rounds_left=5, market_context="")
@@ -66,8 +79,12 @@ def test_seller_agent_rationality_check(MockOpenAI):
 def test_buyer_agent_propose(MockOpenAI):
     # Setup the mock client and its response
     mock_client = MockOpenAI.return_value
-    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 1000, 'message': 'My final offer.'}"})})]})
-    mock_client.chat.completions.create.return_value = mock_response
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 1000, "message": "My final offer."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
     
     agent = BuyerAgent(max_price=1200)
     # Seller offered 1100. Buyer proposes 1000. Rationality check passes (1000 not > 1100).
@@ -79,8 +96,12 @@ def test_buyer_agent_propose(MockOpenAI):
 def test_buyer_agent_enforce_max_price(MockOpenAI):
     # Test safeguard: Model tries to offer 1300 (above max 1200)
     mock_client = MockOpenAI.return_value
-    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 1300, 'message': 'Take my money.'}"})})]})
-    mock_client.chat.completions.create.return_value = mock_response
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 1300, "message": "Take my money."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
     
     agent = BuyerAgent(max_price=1200)
     # Seller offered 1500. Rationality check passes (1300 not > 1500). Max price check catches it.
@@ -92,8 +113,12 @@ def test_buyer_agent_enforce_max_price(MockOpenAI):
 def test_buyer_agent_rationality_check(MockOpenAI):
     # Test safeguard: Model tries to offer 1100, but Seller already offered 1000.
     mock_client = MockOpenAI.return_value
-    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 1100, 'message': 'Take it.'}"})})]})
-    mock_client.chat.completions.create.return_value = mock_response
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 1100, "message": "Take it."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
     
     agent = BuyerAgent(max_price=1200)
     result = agent.propose("context", 1000, rounds_left=5, market_context="")
@@ -103,8 +128,12 @@ def test_buyer_agent_rationality_check(MockOpenAI):
 @patch("src.agents.base.OpenAI")
 def test_buyer_message_sanitization(MockOpenAI):
     mock_client = MockOpenAI.return_value
-    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 1100, 'message': 'I can only go as high as $1200.'}"})})]})
-    mock_client.chat.completions.create.return_value = mock_response
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 1100, "message": "I can only go as high as $1200."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
     
     agent = BuyerAgent(max_price=1200)
     result = agent.propose("context", 1150, rounds_left=5, market_context="")
@@ -114,8 +143,12 @@ def test_buyer_message_sanitization(MockOpenAI):
 @patch("src.agents.base.OpenAI")
 def test_seller_message_sanitization(MockOpenAI):
     mock_client = MockOpenAI.return_value
-    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 950, 'message': 'This is my minimum.'}"})})]})
-    mock_client.chat.completions.create.return_value = mock_response
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 950, "message": "This is my minimum."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
     
     agent = SellerAgent(min_price=900)
     result = agent.propose("context", 900, rounds_left=5, market_context="")
