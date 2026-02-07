@@ -29,6 +29,20 @@ class NegotiationRequest(BaseModel):
     seller_patience: Optional[int] = Field(None, description="Explicit round limit override")
     buyer_patience: Optional[int] = Field(None, description="Explicit round limit override")
 
+class ListingNegotiationRequest(BaseModel):
+    seller_min_price: float = Field(..., gt=0)
+    buyer_max_price: float = Field(..., gt=0)
+
+    # Market Context (Supply & Demand)
+    active_competitor_sellers: int = Field(0, ge=0, description="Number of other sellers selling this item")
+    active_interested_buyers: int = Field(0, ge=0, description="Number of other buyers interested in this item")
+
+    initial_seller_offer: Optional[float] = None
+    initial_buyer_offer: Optional[float] = None
+
+    seller_patience: Optional[int] = Field(None, description="Explicit round limit override")
+    buyer_patience: Optional[int] = Field(None, description="Explicit round limit override")
+
 class NegotiationTurn(BaseModel):
     round: int
     agent: str  # 'seller' or 'buyer'
