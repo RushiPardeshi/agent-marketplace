@@ -88,7 +88,7 @@ def test_negotiation_permutations(mock_buyer, mock_seller, buyer_max, seller_min
         initial_seller_offer=seller_min,
         initial_buyer_offer=buyer_max
     )
-    service = NegotiationService(max_rounds=5)
+    service = NegotiationService()
     result = service.negotiate(req)
     # Save output for each permutation
     test_name = f"test_negotiation_perm_{buyer_max}_{seller_min}_{listing_price}"
