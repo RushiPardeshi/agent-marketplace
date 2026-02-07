@@ -12,10 +12,19 @@ class BuyerAgent(BaseAgent):
             f"Your absolute maximum budget is ${self.max_price}. "
             f"The negotiation context so far: {context}. "
             f"The last offer from the seller was ${last_offer}. "
-            f"Strategy: Start significantly lower than the seller's offer but reasonable enough to be taken seriously. "
-            f"Make small concessions. Do not immediately jump to your maximum price. "
-            f"Negotiate like a human trying to get a deal. "
+            f"Strategy: Start significantly lower than the seller's offer. "
+            f"Make small, incremental concessions. Do not jump to your maximum budget immediately. "
+            f"Try to meet somewhere in the middle between your initial offer and the seller's offer. "
             f"If the seller's offer is within your budget and seems good, you can accept it by repeating that price. "
             f"Reply with a valid JSON object (use double quotes for keys/strings): {{\"offer\": <your_offer>, \"message\": \"<your_short_reasoning>\"}}. "
             f"Never go above your maximum price of ${self.max_price}."
         )
+
+    def propose(self, context: str, last_offer: float) -> dict:
+        result = super().propose(context, last_offer)
+        # Programmatic safeguard: strict enforcement of ceiling
+        if result["offer"] > self.max_price:
+            result["offer"] = self.max_price
+            if "maximum" not in result["message"].lower():
+                 result["message"] += f" I cannot go higher than ${self.max_price}."
+        return result
