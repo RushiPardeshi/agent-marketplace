@@ -39,10 +39,16 @@ class SellerAgent(BaseAgent):
     def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "") -> dict:
         result = super().propose(context, last_offer, rounds_left, market_context)
         
+        # Ensure last_offer is a valid number before comparing
+        try:
+            valid_last_offer = float(last_offer)
+        except (ValueError, TypeError):
+            valid_last_offer = 0.0
+
         # Programmatic safeguard: Rationality check - Don't offer less than the buyer is willing to pay
-        if last_offer > 0 and result["offer"] < last_offer:
-             result["offer"] = last_offer
-             result["message"] = f"I accept your offer of ${last_offer}. (Adjusted from irrational lower offer)"
+        if valid_last_offer > 0 and result["offer"] < valid_last_offer:
+             result["offer"] = valid_last_offer
+             result["message"] = f"I accept your offer of ${valid_last_offer}. (Adjusted from irrational lower offer)"
 
         # Programmatic safeguard: strict enforcement of floor
         if result["offer"] < self.min_price:
