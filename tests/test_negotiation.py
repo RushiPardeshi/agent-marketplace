@@ -3,6 +3,17 @@ from unittest.mock import patch
 from src.models.schemas import Product, NegotiationRequest
 from src.services.negotiation import NegotiationService
 
+import os
+import json
+
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '../negotiation_outputs')
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def save_output(test_name, result):
+    path = os.path.join(OUTPUT_DIR, f'{test_name}.json')
+    with open(path, 'w') as f:
+        json.dump(result.dict() if hasattr(result, 'dict') else result, f, indent=2)
+
 @patch("src.agents.seller.SellerAgent.propose")
 @patch("src.agents.buyer.BuyerAgent.propose")
 def test_negotiation_agreement(mock_buyer, mock_seller):
@@ -25,6 +36,7 @@ def test_negotiation_agreement(mock_buyer, mock_seller):
     assert result.agreed
     assert result.final_price == 950
     assert len(result.turns) <= 5
+    save_output("test_negotiation_agreement", result)
 
 @patch("src.agents.seller.SellerAgent.propose")
 @patch("src.agents.buyer.BuyerAgent.propose")
@@ -48,3 +60,43 @@ def test_negotiation_deadlock(mock_buyer, mock_seller):
     assert not result.agreed
     assert result.final_price is None
     assert "No agreement" in result.reason
+    save_output("test_negotiation_deadlock", result)
+
+
+# Parameterized tests for permutations
+import itertools
+
+@patch("src.agents.seller.SellerAgent.propose")
+@patch("src.agents.buyer.BuyerAgent.propose")
+@pytest.mark.parametrize("buyer_max,seller_min,listing_price", [
+    (1000, 900, 950),
+    (1200, 1100, 1150),
+    (800, 700, 750),
+    (1500, 1200, 1400),
+    (950, 950, 950),
+    (1000, 1200, 1100),
+    (900, 800, 850),
+])
+def test_negotiation_permutations(mock_buyer, mock_seller, buyer_max, seller_min, listing_price):
+    # Buyer always offers buyer_max, seller always offers seller_min
+    mock_buyer.side_effect = [{"offer": buyer_max, "message": f"My max is {buyer_max}"}] * 5
+    mock_seller.side_effect = [{"offer": seller_min, "message": f"My min is {seller_min}"}] * 5
+    req = NegotiationRequest(
+        product=Product(name="TestProduct", listing_price=listing_price),
+        seller_min_price=seller_min,
+        buyer_max_price=buyer_max,
+        initial_seller_offer=seller_min,
+        initial_buyer_offer=buyer_max
+    )
+    service = NegotiationService(max_rounds=5)
+    result = service.negotiate(req)
+    # Save output for each permutation
+    test_name = f"test_negotiation_perm_{buyer_max}_{seller_min}_{listing_price}"
+    save_output(test_name, result)
+    # Assert agreement only if buyer_max >= seller_min
+    if buyer_max >= seller_min:
+        assert result.agreed
+        assert result.final_price == seller_min
+    else:
+        assert not result.agreed
+        assert result.final_price is None
