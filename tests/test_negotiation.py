@@ -14,7 +14,7 @@ def test_negotiation_agreement(mock_buyer, mock_seller):
         {"offer": 950, "message": "I accept 950."}
     ]
     req = NegotiationRequest(
-        product=Product(name="Laptop"),
+        product=Product(name="Laptop", listing_price=1200),
         seller_min_price=900,
         buyer_max_price=1000,
         initial_seller_offer=1000,
@@ -37,7 +37,7 @@ def test_negotiation_deadlock(mock_buyer, mock_seller):
         {"offer": 1200, "message": "1200 is my min."}
     ] * 5
     req = NegotiationRequest(
-        product=Product(name="Laptop"),
+        product=Product(name="Laptop", listing_price=1500),
         seller_min_price=1200,
         buyer_max_price=800,
         initial_seller_offer=1200,

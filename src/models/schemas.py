@@ -4,6 +4,7 @@ from typing import List, Optional
 class Product(BaseModel):
     name: str
     description: Optional[str] = None
+    listing_price: float = Field(..., gt=0)
 
 class NegotiationRequest(BaseModel):
     product: Product
