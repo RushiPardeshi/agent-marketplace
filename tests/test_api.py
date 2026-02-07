@@ -14,7 +14,7 @@ def test_negotiate_endpoint_success(mock_negotiate):
         "reason": "Agreement"
     }
     payload = {
-        "product": {"name": "Laptop"},
+        "product": {"name": "Laptop", "listing_price": 1200},
         "seller_min_price": 900,
         "buyer_max_price": 1000
     }
@@ -28,7 +28,7 @@ def test_negotiate_endpoint_success(mock_negotiate):
 def test_negotiate_endpoint_failure(mock_negotiate):
     mock_negotiate.side_effect = Exception("Negotiation error")
     payload = {
-        "product": {"name": "Laptop"},
+        "product": {"name": "Laptop", "listing_price": 1200},
         "seller_min_price": 900,
         "buyer_max_price": 1000
     }

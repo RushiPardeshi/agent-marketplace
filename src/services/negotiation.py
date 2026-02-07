@@ -12,10 +12,10 @@ class NegotiationService:
         turns = []
         context = ""
         round_num = 1
-        seller_offer = req.initial_seller_offer or req.seller_min_price
-        buyer_offer = req.initial_buyer_offer or req.buyer_max_price
+        seller_offer = req.initial_seller_offer or req.product.listing_price
+        # buyer_offer is ignored; negotiation starts from seller's listing/initial offer
         last_offer = seller_offer
-        agent_turn = "buyer"
+        agent_turn = "buyer" # Buyer responds to the listing price
         agreed = False
         final_price = None
         reason = None
@@ -26,11 +26,14 @@ class NegotiationService:
                 message = offer_data.get("message", "")
                 turns.append(NegotiationTurn(round=round_num, agent="buyer", offer=offer, message=message))
                 context += f"\nBuyer offers ${offer}: {message}"
-                if offer >= seller.min_price:
+                
+                # Check for agreement (convergence)
+                if abs(offer - last_offer) < 0.01:
                     agreed = True
                     final_price = offer
-                    reason = "Buyer accepted seller's minimum price."
+                    reason = "Buyer accepted seller's previous offer."
                     break
+                    
                 last_offer = offer
                 agent_turn = "seller"
             else:
@@ -39,11 +42,14 @@ class NegotiationService:
                 message = offer_data.get("message", "")
                 turns.append(NegotiationTurn(round=round_num, agent="seller", offer=offer, message=message))
                 context += f"\nSeller offers ${offer}: {message}"
-                if offer <= buyer.max_price:
+                
+                # Check for agreement (convergence)
+                if abs(offer - last_offer) < 0.01:
                     agreed = True
                     final_price = offer
-                    reason = "Seller accepted buyer's maximum price."
+                    reason = "Seller accepted buyer's previous offer."
                     break
+                    
                 last_offer = offer
                 agent_turn = "buyer"
             round_num += 1

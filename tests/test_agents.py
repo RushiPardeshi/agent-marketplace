@@ -8,26 +8,34 @@ def test_seller_agent_prompt():
     prompt = agent.build_prompt("context", 950)
     assert "minimum acceptable price is $900" in prompt
     assert "context" in prompt
-    assert "last offer was $950" in prompt
+    assert "last offer from the buyer was $950" in prompt
 
 def test_buyer_agent_prompt():
     agent = BuyerAgent(max_price=1200)
     prompt = agent.build_prompt("context", 1100)
-    assert "maximum acceptable price is $1200" in prompt
+    assert "maximum budget is $1200" in prompt
     assert "context" in prompt
-    assert "last offer was $1100" in prompt
+    assert "last offer from the seller was $1100" in prompt
 
-@patch("openai.ChatCompletion.create")
-def test_seller_agent_propose(mock_create):
-    mock_create.return_value = type("obj", (), {"choices": [type("obj", (), {"message": {"content": "{'offer': 950, 'message': 'Best I can do.'}"}})]})
+@patch("src.agents.base.OpenAI")
+def test_seller_agent_propose(MockOpenAI):
+    # Setup the mock client and its response
+    mock_client = MockOpenAI.return_value
+    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 950, 'message': 'Best I can do.'}"})})]})
+    mock_client.chat.completions.create.return_value = mock_response
+    
     agent = SellerAgent(min_price=900)
     result = agent.propose("context", 1000)
     assert result["offer"] == 950
     assert "Best I can do" in result["message"]
 
-@patch("openai.ChatCompletion.create")
-def test_buyer_agent_propose(mock_create):
-    mock_create.return_value = type("obj", (), {"choices": [type("obj", (), {"message": {"content": "{'offer': 1000, 'message': 'My final offer.'}"}})]})
+@patch("src.agents.base.OpenAI")
+def test_buyer_agent_propose(MockOpenAI):
+    # Setup the mock client and its response
+    mock_client = MockOpenAI.return_value
+    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 1000, 'message': 'My final offer.'}"})})]})
+    mock_client.chat.completions.create.return_value = mock_response
+    
     agent = BuyerAgent(max_price=1200)
     result = agent.propose("context", 1100)
     assert result["offer"] == 1000

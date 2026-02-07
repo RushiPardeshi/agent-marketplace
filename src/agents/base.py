@@ -1,3 +1,6 @@
+import json
+import re
+import ast
 from openai import OpenAI
 from src.config import settings
 
@@ -15,17 +18,38 @@ class BaseAgent:
 
     def propose(self, context: str, last_offer: float) -> dict:
         prompt = self.build_prompt(context, last_offer)
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": prompt}],
-            temperature=self.temperature,
-            max_tokens=150,
-        )
-        content = response.choices[0].message.content.strip()
-        # Expecting agent to return a price and a message
-        # Example: {"offer": 950, "message": "I can offer at $950 because..."}
         try:
-            offer_data = eval(content) if content.startswith("{") else {"offer": float(content)}
-        except Exception:
-            offer_data = {"offer": last_offer, "message": "Could not parse response."}
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "system", "content": prompt}],
+                temperature=self.temperature,
+                max_tokens=150,
+            )
+            content = response.choices[0].message.content.strip()
+            
+            # Helper to extract JSON from markdown or raw text
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                try:
+                    offer_data = json.loads(json_str)
+                except json.JSONDecodeError:
+                    # Fallback for Python-style dicts (single quotes)
+                    try:
+                        offer_data = ast.literal_eval(json_str)
+                    except (ValueError, SyntaxError):
+                         raise ValueError(f"Could not parse JSON or Dict: {json_str}")
+            else:
+                # Fallback: try to parse as just a float number
+                offer_data = {"offer": float(content.strip()), "message": ""}
+                
+        except Exception as e:
+            # Fallback to last_offer if anything fails (API or parsing)
+            # In a real app, we might retry or raise an error
+            raw_content = locals().get('content', 'No content')
+            offer_data = {
+                "offer": last_offer, 
+                "message": f"Error generating offer: {str(e)}. Raw: {raw_content}"
+            }
+            
         return offer_data
