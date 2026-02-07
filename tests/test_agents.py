@@ -60,7 +60,7 @@ def test_seller_agent_rationality_check(MockOpenAI):
     agent = SellerAgent(min_price=900)
     result = agent.propose("context", 1000, rounds_left=5, market_context="")
     assert result["offer"] == 1000 # Should be corrected to match buyer's higher offer
-    assert "I accept your offer" in result["message"]
+    assert "Deal. I accept $1000" in result["message"]
 
 @patch("src.agents.base.OpenAI")
 def test_buyer_agent_propose(MockOpenAI):
@@ -98,4 +98,26 @@ def test_buyer_agent_rationality_check(MockOpenAI):
     agent = BuyerAgent(max_price=1200)
     result = agent.propose("context", 1000, rounds_left=5, market_context="")
     assert result["offer"] == 1000 # Should be corrected to match seller's lower offer
-    assert "I accept your offer" in result["message"]
+    assert "Deal. I accept $1000" in result["message"]
+
+@patch("src.agents.base.OpenAI")
+def test_buyer_message_sanitization(MockOpenAI):
+    mock_client = MockOpenAI.return_value
+    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 1100, 'message': 'I can only go as high as $1200.'}"})})]})
+    mock_client.chat.completions.create.return_value = mock_response
+    
+    agent = BuyerAgent(max_price=1200)
+    result = agent.propose("context", 1150, rounds_left=5, market_context="")
+    assert "best offer" in result["message"]
+    assert "1200" not in result["message"]
+
+@patch("src.agents.base.OpenAI")
+def test_seller_message_sanitization(MockOpenAI):
+    mock_client = MockOpenAI.return_value
+    mock_response = type("obj", (), {"choices": [type("obj", (), {"message": type("obj", (), {"content": "{'offer': 950, 'message': 'This is my minimum.'}"})})]})
+    mock_client.chat.completions.create.return_value = mock_response
+    
+    agent = SellerAgent(min_price=900)
+    result = agent.propose("context", 900, rounds_left=5, market_context="")
+    assert "as low as I can go" in result["message"]
+    assert "minimum" not in result["message"]

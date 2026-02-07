@@ -51,11 +51,29 @@ class SellerAgent(BaseAgent):
         # Programmatic safeguard: Rationality check - Don't offer less than the buyer is willing to pay
         if valid_last_offer > 0 and result["offer"] < valid_last_offer:
              result["offer"] = valid_last_offer
-             result["message"] = f"I accept your offer of ${valid_last_offer}."
+             result["message"] = f"Deal. I accept ${valid_last_offer}."
 
         # Programmatic safeguard: strict enforcement of floor
         if result["offer"] < self.min_price:
             result["offer"] = self.min_price
             # Overwrite the message to prevent confusion
             result["message"] = f"I cannot go any lower than this."
+
+        # Sanitization: Prevent leaking min price or specific phrases
+        msg_lower = result["message"].lower()
+        min_price_val = float(self.min_price)
+        min_price_str = str(int(min_price_val)) if min_price_val.is_integer() else str(min_price_val)
+        
+        if (f"${min_price_str}" in result["message"]) or \
+           ("minimum" in msg_lower) or \
+           ("go below" in msg_lower):
+            result["message"] = "That's as low as I can go."
+            
+        if "go as high" in msg_lower:
+            result["message"] = result["message"].replace("go as high", "go as low")
+
+        # Force explicit accept message if repeating offer
+        if valid_last_offer > 0 and abs(result["offer"] - valid_last_offer) < 0.01:
+             result["message"] = f"Deal. I accept ${valid_last_offer}."
+
         return result

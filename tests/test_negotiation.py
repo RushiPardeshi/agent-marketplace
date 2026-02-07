@@ -25,7 +25,7 @@ def test_negotiation_agreement(mock_buyer, mock_seller):
         {"offer": 950, "message": "I accept 950."}
     ]
     req = NegotiationRequest(
-        product=Product(name="Laptop", listing_price=1200),
+        product=Product(name="Laptop", listing_price=1000), # Lower listing to ensure target <= 950
         seller_min_price=900,
         buyer_max_price=1000,
         initial_seller_offer=1000,
@@ -120,3 +120,50 @@ def test_negotiation_permutations(mock_buyer, mock_seller, buyer_max, seller_min
     else:
         assert not result.agreed
         assert result.final_price is None
+
+@patch("src.agents.seller.SellerAgent.propose")
+@patch("src.agents.buyer.BuyerAgent.propose")
+def test_negotiation_seller_target_enforcement(mock_buyer, mock_seller):
+    # Scenario: High Seller Leverage (Target will be high)
+    # Listing: 1200, Seller Min: 1000.
+    # Leverage "high" -> k=0.85 -> Target = 1000 + (200 * 0.85) = 1170.
+    # Buyer offers 1100.
+    # Seller Agent (mock) TRIES to accept 1100.
+    # Service should INTERCEPT and counter-offer 1170 (or 1101, max of target vs offer+1).
+
+    req = NegotiationRequest(
+        product=Product(name="HotItem", listing_price=1200),
+        seller_min_price=1000,
+        buyer_max_price=1200,
+        active_competitor_sellers=0,
+        active_interested_buyers=10 # High Seller Leverage
+    )
+
+    # Provide enough side effects for a longer negotiation if needed
+    # Initial offer is just a setup, subsequent are repeated
+    mock_buyer.side_effect = [{"offer": 1100, "message": "1100 is my offer."}] * 20
+    
+    # Seller tries to accept 1100 (which is < 1170 target)
+    mock_seller.side_effect = [{"offer": 1100, "message": "I accept."}] * 20
+
+    service = NegotiationService()
+
+    # We only run enough turns to trigger the interaction
+    # The loop condition in service is while patience > 0.
+    # We just want to check the first seller turn result.
+    # Since we can't easily inspect internal state without modifying code, 
+    # we can check the transcript after the negotiation (likely fails or continues).
+    # But since mocks run out, we might get an error if we don't provide enough side effects.
+    # Let's provide more side effects to be safe.
+    
+    result = service.negotiate(req)
+    
+    # Analyze the turns
+    # Turn 1: Buyer 1100.
+    # Turn 2: Seller *would* have said 1100, but service should override to >= 1170.
+    
+    seller_turn = result.turns[1]
+    assert seller_turn.agent == "seller"
+    assert seller_turn.offer >= 1170 
+    assert "I can't do that" in seller_turn.message
+
