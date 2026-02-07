@@ -71,7 +71,10 @@ class NegotiationService:
                 # Pass leverage context to agent
                 market_context = f"You have {buyer_leverage} leverage. (Competition: {req.active_competitor_sellers} other sellers)."
                 
-                offer_data = buyer.propose(context, last_offer, rounds_left=buyer_patience, market_context=market_context)
+                # Use description if available
+                desc = req.product.description if req.product.description else req.product.name
+                
+                offer_data = buyer.propose(context, last_offer, rounds_left=buyer_patience, market_context=market_context, product_description=desc)
                 offer = offer_data.get("offer", last_offer)
                 message = offer_data.get("message", "")
                 
@@ -106,7 +109,10 @@ class NegotiationService:
                 # Pass leverage context to agent
                 market_context = f"You have {seller_leverage} leverage. (Demand: {req.active_interested_buyers} interested buyers)."
                 
-                offer_data = seller.propose(context, last_offer, rounds_left=seller_patience, market_context=market_context)
+                # Use description if available
+                desc = req.product.description if req.product.description else req.product.name
+                
+                offer_data = seller.propose(context, last_offer, rounds_left=seller_patience, market_context=market_context, product_description=desc)
                 offer = offer_data.get("offer", last_offer)
                 message = offer_data.get("message", "")
                 
