@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body, Path
 from fastapi.middleware.cors import CORSMiddleware
 from src.services.negotiation import NegotiationService
 from sqlalchemy.orm import Session
@@ -44,7 +44,26 @@ def health():
 
 
 @app.post("/negotiate", response_model=NegotiationResult)
-def negotiate(request: NegotiationRequest):
+def negotiate(
+    request: NegotiationRequest = Body(
+        ...,
+        example={
+            "product": {
+                "name": "Laptop",
+                "description": "Lightly used, includes charger",
+                "listing_price": 1200,
+            },
+            "seller_min_price": 900,
+            "buyer_max_price": 1100,
+            "active_competitor_sellers": 1,
+            "active_interested_buyers": 5,
+            "initial_seller_offer": None,
+            "initial_buyer_offer": None,
+            "seller_patience": None,
+            "buyer_patience": None,
+        },
+    )
+):
     try:
         result = negotiation_service.negotiate(request)
         return result
@@ -55,8 +74,20 @@ def negotiate(request: NegotiationRequest):
 # New endpoint: Negotiate for a specific listing, ensuring product fields match the listing in DB.
 @app.post("/listings/{listing_id}/negotiate", response_model=NegotiationResult)
 def negotiate_for_listing(
-    listing_id: int,
-    request: ListingNegotiationRequest,
+    listing_id: int = Path(..., example=8),
+    request: ListingNegotiationRequest = Body(
+        ...,
+        example={
+            "seller_min_price": 700,
+            "buyer_max_price": 900,
+            "active_competitor_sellers": 1,
+            "active_interested_buyers": 2,
+            "initial_seller_offer": None,
+            "initial_buyer_offer": None,
+            "seller_patience": None,
+            "buyer_patience": None,
+        },
+    ),
     db: Session = Depends(get_db),
 ):
     listing = db.query(Listing).filter(Listing.id == listing_id).first()

@@ -45,35 +45,48 @@ curl -X POST http://localhost:8000/negotiate \
   }' | jq .
 ```
 
+Trigger a negotiation for a listing in the SQLite DB (by listing id):
+```sh
+curl -X POST http://localhost:8000/listings/8/negotiate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "seller_min_price": 250,
+    "buyer_max_price": 320,
+    "active_competitor_sellers": 1,
+    "active_interested_buyers": 2
+  }' | jq .
+```
+
 ## Marketplace Listings (SQLite)
 
-This branch adds a simple SQLite-backed listings store to support a dummy marketplace.
+This repo includes a simple SQLite-backed listings store to support a dummy marketplace.
+
+### What this means
+- **SQLite is file-based**: there is **no separate SQLite server** to run.
+- When you start the FastAPI app, it opens/creates a local database file named **`app.db`** in the project root.
 
 ### What was added
-- SQLite database (`app.db`) created automatically on server startup
-- `Listing` table + seed data (10 dummy listings)
-- CRUD-style endpoints to fetch/create listings
-- Simple keyword search via query param `q`
+- SQLite database file: `app.db` (auto-created on startup)
+- `Listing` table + **10 seeded dummy listings** (seed runs only when the table is empty)
+- REST endpoints to list/search/fetch/create listings
 
-### How to test
-- Open Swagger UI: `http://127.0.0.1:8000/docs`
-
-- List all dummy listings:
+### How to access listings (API)
+- **List all listings**
   ```sh
   curl http://127.0.0.1:8000/listings
   ```
 
-- Search listings (title/description):
+- **Search listings** (matches `title` and `description`)
   ```sh
   curl "http://127.0.0.1:8000/listings?q=iphone"
   ```
 
-- Get a listing by id:
+- **Get listing by id**
   ```sh
   curl http://127.0.0.1:8000/listings/1
   ```
 
-- Create a new listing:
+- **Create a new listing**
   ```sh
   curl -X POST http://127.0.0.1:8000/listings \
     -H "Content-Type: application/json" \
@@ -85,9 +98,37 @@ This branch adds a simple SQLite-backed listings store to support a dummy market
     }'
   ```
 
-### Notes
-- Seeding runs only if the `listings` table is empty. To re-seed during development, delete `app.db` and restart the server.
-- `app.db` is ignored via `.gitignore`.
+### Expected output
+- `GET /listings` returns a JSON array of listings (typically **10 items** right after a fresh seed). Example:
+  ```json
+  [
+    {
+      "id": 10,
+      "title": "Textbook Bundle (CS)",
+      "description": "Algorithms + ML intro books. Great condition.",
+      "price": 40.0,
+      "category": "books"
+    }
+  ]
+  ```
+
+- `GET /listings?q=iphone` returns a filtered JSON array (0+ results).
+
+- `GET /listings/{id}` returns a single listing object. If the id does not exist, you get a **404**:
+  ```json
+  {"detail": "Listing not found"}
+  ```
+
+- `POST /listings` returns the created listing including its new `id`.
+
+### How to test
+- Swagger UI: `http://127.0.0.1:8000/docs`
+  - Try `GET /listings` and confirm you see the seeded listings.
+
+### Notes / common gotchas
+- **Seed behavior**: seeding runs only if the `listings` table is empty.
+  - To reset during development: stop the server, delete `app.db`, then restart.
+- `app.db` is ignored via `.gitignore` (it should not be committed).
 
 ### How it Works
 1. **Listing**: The negotiation starts with the Seller's `listing_price`.

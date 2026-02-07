@@ -1,12 +1,11 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from enum import Enum
 
 class Product(BaseModel):
     name: str
     description: Optional[str] = None
     listing_price: float = Field(..., gt=0)
-
-from enum import Enum
 
 class MarketBehavior(str, Enum):
     AGGRESSIVE = "aggressive"  # Wants deal fast / High demand
@@ -29,6 +28,25 @@ class NegotiationRequest(BaseModel):
     seller_patience: Optional[int] = Field(None, description="Explicit round limit override")
     buyer_patience: Optional[int] = Field(None, description="Explicit round limit override")
 
+    class Config:
+        schema_extra = {
+            "example": {
+                "product": {
+                    "name": "Laptop",
+                    "description": "Lightly used, includes charger",
+                    "listing_price": 1200,
+                },
+                "seller_min_price": 900,
+                "buyer_max_price": 1100,
+                "active_competitor_sellers": 1,
+                "active_interested_buyers": 5,
+                "initial_seller_offer": None,
+                "initial_buyer_offer": None,
+                "seller_patience": None,
+                "buyer_patience": None,
+            }
+        }
+
 class ListingNegotiationRequest(BaseModel):
     seller_min_price: float = Field(..., gt=0)
     buyer_max_price: float = Field(..., gt=0)
@@ -42,6 +60,20 @@ class ListingNegotiationRequest(BaseModel):
 
     seller_patience: Optional[int] = Field(None, description="Explicit round limit override")
     buyer_patience: Optional[int] = Field(None, description="Explicit round limit override")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "seller_min_price": 700,
+                "buyer_max_price": 900,
+                "active_competitor_sellers": 1,
+                "active_interested_buyers": 2,
+                "initial_seller_offer": None,
+                "initial_buyer_offer": None,
+                "seller_patience": None,
+                "buyer_patience": None,
+            }
+        }
 
 class NegotiationTurn(BaseModel):
     round: int
