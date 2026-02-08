@@ -61,6 +61,8 @@ class NegotiationService:
         
         seller_offer = req.initial_seller_offer or req.product.listing_price
         last_offer = seller_offer
+        last_buyer_offer = None
+        last_seller_offer = seller_offer
         agent_turn = "buyer" # Buyer responds to the listing price
         agreed = False
         final_price = None
@@ -77,6 +79,11 @@ class NegotiationService:
                 offer_data = buyer.propose(context, last_offer, rounds_left=buyer_patience, market_context=market_context, product_description=desc)
                 offer = offer_data.get("offer", last_offer)
                 message = offer_data.get("message", "")
+
+                # Enforce monotonic concessions for the buyer (should not go down)
+                if last_buyer_offer is not None and offer < last_buyer_offer:
+                    offer = last_buyer_offer
+                    message = f"I need to stay consistent. My offer remains at ${offer}."
                 
                 # Update State
                 turns.append(NegotiationTurn(round=round_num, agent="buyer", offer=offer, message=message))
@@ -104,6 +111,7 @@ class NegotiationService:
                 buyer_patience -= 1
                 
                 last_offer = offer
+                last_buyer_offer = offer
                 agent_turn = "seller"
             else:
                 # Pass leverage context to agent
@@ -115,6 +123,11 @@ class NegotiationService:
                 offer_data = seller.propose(context, last_offer, rounds_left=seller_patience, market_context=market_context, product_description=desc)
                 offer = offer_data.get("offer", last_offer)
                 message = offer_data.get("message", "")
+
+                # Enforce monotonic concessions for the seller (should not go up)
+                if last_seller_offer is not None and offer > last_seller_offer:
+                    offer = last_seller_offer
+                    message = f"I need to stay consistent. My offer remains at ${offer}."
                 
                 turns.append(NegotiationTurn(round=round_num, agent="seller", offer=offer, message=message))
                 context += f"\nSeller offers ${offer}: {message}"
@@ -140,6 +153,7 @@ class NegotiationService:
                         # Update local variables for next loop
                         offer = counter_offer
                         last_offer = offer
+                        last_seller_offer = offer
                         context += f" (Corrected to ${offer})"
                         
                         seller_patience -= 1
@@ -150,6 +164,7 @@ class NegotiationService:
                 seller_patience -= 1
                 
                 last_offer = offer
+                last_seller_offer = offer
                 agent_turn = "buyer"
             round_num += 1
             

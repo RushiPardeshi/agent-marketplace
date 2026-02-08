@@ -64,6 +64,31 @@ def test_negotiation_deadlock(mock_buyer, mock_seller):
     assert "Negotiation ended without agreement" in result.reason
     save_output("test_negotiation_deadlock", result)
 
+@patch("src.agents.seller.SellerAgent.propose")
+@patch("src.agents.buyer.BuyerAgent.propose")
+def test_buyer_offer_monotonicity(mock_buyer, mock_seller):
+    # Buyer should not walk back to a lower offer after increasing.
+    mock_buyer.side_effect = [
+        {"offer": 1000, "message": "I can do 1000."},
+        {"offer": 950, "message": "Actually 950."}
+    ]
+    mock_seller.side_effect = [
+        {"offer": 1050, "message": "I can do 1050."}
+    ]
+    req = NegotiationRequest(
+        product=Product(name="Phone", listing_price=1100),
+        seller_min_price=900,
+        buyer_max_price=1100,
+        initial_seller_offer=1100,
+        seller_patience=2,
+        buyer_patience=2
+    )
+    service = NegotiationService()
+    result = service.negotiate(req)
+    buyer_turns = [turn for turn in result.turns if turn.agent == "buyer"]
+    assert len(buyer_turns) == 2
+    assert buyer_turns[1].offer == 1000
+
 
 # Parameterized tests for permutations
 import itertools
