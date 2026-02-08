@@ -2,8 +2,10 @@ fastapi
 openai
 pydantic
 python-dotenv
-uvicorn
+uvicorn[standard]
 pytest
 pytest-mock
 httpx
 sqlalchemy==2.0.*
+redis
+websockets

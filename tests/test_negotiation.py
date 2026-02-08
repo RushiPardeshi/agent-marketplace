@@ -81,8 +81,7 @@ import itertools
 ])
 def test_negotiation_permutations(mock_buyer, mock_seller, buyer_max, seller_min, listing_price):
     if buyer_max >= seller_min:
-        # Success case: Agents converge to seller_min
-        # Buyer: 1000 -> Seller: 900 -> Buyer: 900 (Accept)
+        # Success case: Buyer starts at max, seller meets that offer
         mock_buyer.side_effect = [
             {"offer": buyer_max, "message": f"My max is {buyer_max}"},
             {"offer": seller_min, "message": "I accept your price."}
@@ -116,7 +115,7 @@ def test_negotiation_permutations(mock_buyer, mock_seller, buyer_max, seller_min
     # Assert agreement only if buyer_max >= seller_min
     if buyer_max >= seller_min:
         assert result.agreed
-        assert result.final_price == seller_min
+        assert result.final_price == buyer_max
     else:
         assert not result.agreed
         assert result.final_price is None
@@ -125,26 +124,26 @@ def test_negotiation_permutations(mock_buyer, mock_seller, buyer_max, seller_min
 @patch("src.agents.buyer.BuyerAgent.propose")
 def test_negotiation_seller_target_enforcement(mock_buyer, mock_seller):
     # Scenario: High Seller Leverage (Target will be high)
-    # Listing: 1200, Seller Min: 1000.
-    # Leverage "high" -> k=0.85 -> Target = 1000 + (200 * 0.85) = 1170.
-    # Buyer offers 1100.
-    # Seller Agent (mock) TRIES to accept 1100.
-    # Service should INTERCEPT and counter-offer 1170 (or 1101, max of target vs offer+1).
+    # Listing: 1000, Seller Min: 990.
+    # Leverage "high" -> k=0.85 -> Target = 990 + (10 * 0.85) = 998.5.
+    # Buyer offers 998 (below target).
+    # Seller Agent (mock) TRIES to accept 998.
+    # Service should INTERCEPT and counter-offer >= 999 (max of target vs offer+1).
 
     req = NegotiationRequest(
-        product=Product(name="HotItem", listing_price=1200),
-        seller_min_price=1000,
-        buyer_max_price=1200,
+        product=Product(name="HotItem", listing_price=1000),
+        seller_min_price=990,
+        buyer_max_price=1000,
         active_competitor_sellers=0,
         active_interested_buyers=10 # High Seller Leverage
     )
 
     # Provide enough side effects for a longer negotiation if needed
     # Initial offer is just a setup, subsequent are repeated
-    mock_buyer.side_effect = [{"offer": 1100, "message": "1100 is my offer."}] * 20
+    mock_buyer.side_effect = [{"offer": 998, "message": "998 is my offer."}] * 20
     
-    # Seller tries to accept 1100 (which is < 1170 target)
-    mock_seller.side_effect = [{"offer": 1100, "message": "I accept."}] * 20
+    # Seller tries to accept 998 (which is < 998.5 target)
+    mock_seller.side_effect = [{"offer": 998, "message": "I accept."}] * 20
 
     service = NegotiationService()
 
@@ -159,11 +158,33 @@ def test_negotiation_seller_target_enforcement(mock_buyer, mock_seller):
     result = service.negotiate(req)
     
     # Analyze the turns
-    # Turn 1: Buyer 1100.
-    # Turn 2: Seller *would* have said 1100, but service should override to >= 1170.
+    # Turn 1: Buyer 998.
+    # Turn 2: Seller *would* have said 998, but service should override to >= 999.
     
     seller_turn = result.turns[1]
     assert seller_turn.agent == "seller"
-    assert seller_turn.offer >= 1170 
+    assert seller_turn.offer >= 999 
     assert "I can't do that" in seller_turn.message
+
+@patch("src.agents.seller.SellerAgent.propose")
+def test_negotiate_with_human_buyer(mock_seller):
+    def human_propose(*_args, **_kwargs):
+        return {"offer": 880, "message": "I can do 880."}
+
+    mock_seller.side_effect = [
+        {"offer": 880, "message": "I accept 880."}
+    ]
+
+    req = NegotiationRequest(
+        product=Product(name="Chair", listing_price=900),
+        seller_min_price=850,
+        buyer_max_price=1000
+    )
+    service = NegotiationService()
+    result = service.negotiate_with_human(req, human_role="buyer", human_propose=human_propose)
+
+    assert result.agreed
+    assert result.final_price == 880
+    assert result.turns[0].agent == "buyer"
+    assert result.turns[1].agent == "seller"
 
