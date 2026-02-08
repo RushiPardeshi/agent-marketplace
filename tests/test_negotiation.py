@@ -12,7 +12,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 def save_output(test_name, result):
     path = os.path.join(OUTPUT_DIR, f'{test_name}.json')
     with open(path, 'w') as f:
-        json.dump(result.dict() if hasattr(result, 'dict') else result, f, indent=2)
+        payload = result.model_dump() if hasattr(result, "model_dump") else result
+        json.dump(payload, f, indent=2)
 
 @patch("src.agents.seller.SellerAgent.propose")
 @patch("src.agents.buyer.BuyerAgent.propose")
@@ -25,7 +26,7 @@ def test_negotiation_agreement(mock_buyer, mock_seller):
         {"offer": 950, "message": "I accept 950."}
     ]
     req = NegotiationRequest(
-        product=Product(name="Laptop", listing_price=1000), # Lower listing to ensure target <= 950
+        product=Product(name="Laptop", listing_price=950), # Ensure first seller turn can accept 950
         seller_min_price=900,
         buyer_max_price=1000,
         initial_seller_offer=1000,
@@ -127,7 +128,7 @@ def test_negotiation_seller_target_enforcement(mock_buyer, mock_seller):
     # Listing: 1000, Seller Min: 990.
     # Leverage "high" -> k=0.85 -> Target = 990 + (10 * 0.85) = 998.5.
     # Buyer offers 998 (below target).
-    # Seller Agent (mock) TRIES to accept 998.
+    # Seller counters once, then tries to accept 998.
     # Service should INTERCEPT and counter-offer >= 999 (max of target vs offer+1).
 
     req = NegotiationRequest(
@@ -139,11 +140,16 @@ def test_negotiation_seller_target_enforcement(mock_buyer, mock_seller):
     )
 
     # Provide enough side effects for a longer negotiation if needed
-    # Initial offer is just a setup, subsequent are repeated
-    mock_buyer.side_effect = [{"offer": 998, "message": "998 is my offer."}] * 20
+    mock_buyer.side_effect = [
+        {"offer": 998, "message": "998 is my offer."},
+        {"offer": 998, "message": "My offer is still 998."},
+    ] * 10
     
-    # Seller tries to accept 998 (which is < 998.5 target)
-    mock_seller.side_effect = [{"offer": 998, "message": "I accept."}] * 20
+    # Seller counters once, then tries to accept 998 (which is < 998.5 target)
+    mock_seller.side_effect = [
+        {"offer": 1000, "message": "Counter at 1000."},
+        {"offer": 998, "message": "I accept."},
+    ] * 10
 
     service = NegotiationService()
 
@@ -159,9 +165,11 @@ def test_negotiation_seller_target_enforcement(mock_buyer, mock_seller):
     
     # Analyze the turns
     # Turn 1: Buyer 998.
-    # Turn 2: Seller *would* have said 998, but service should override to >= 999.
+    # Turn 2: Seller counter 1000.
+    # Turn 3: Buyer 998.
+    # Turn 4: Seller *would* have said 998, but service should override to >= 999.
     
-    seller_turn = result.turns[1]
+    seller_turn = result.turns[3]
     assert seller_turn.agent == "seller"
     assert seller_turn.offer >= 999 
     assert "I can't do that" in seller_turn.message
@@ -176,7 +184,7 @@ def test_negotiate_with_human_buyer(mock_seller):
     ]
 
     req = NegotiationRequest(
-        product=Product(name="Chair", listing_price=900),
+        product=Product(name="Chair", listing_price=880),
         seller_min_price=850,
         buyer_max_price=1000
     )
@@ -186,5 +194,98 @@ def test_negotiate_with_human_buyer(mock_seller):
     assert result.agreed
     assert result.final_price == 880
     assert result.turns[0].agent == "buyer"
+    assert len(result.turns) == 1
+
+@patch("src.agents.seller.SellerAgent.propose")
+@patch("src.agents.buyer.BuyerAgent.propose")
+def test_auto_accept_at_buyer_max(mock_buyer, mock_seller):
+    # Medium leverage -> seller target around 1080, buyer max 1100
+    mock_buyer.side_effect = [{"offer": 1100, "message": "Best offer."}]
+    mock_seller.side_effect = [{"offer": 1200, "message": "Should not be used."}] * 5
+    req = NegotiationRequest(
+        product=Product(name="Phone", listing_price=1200),
+        seller_min_price=900,
+        buyer_max_price=1100,
+        active_competitor_sellers=1,
+        active_interested_buyers=0
+    )
+    service = NegotiationService()
+    result = service.negotiate(req)
+    assert result.agreed
+    assert result.final_price == 1100
     assert result.turns[1].agent == "seller"
+
+@patch("src.agents.seller.SellerAgent.propose")
+@patch("src.agents.buyer.BuyerAgent.propose")
+def test_buyer_concession_cap(mock_buyer, mock_seller):
+    # Listing 1000, medium leverage -> max step 3% = 30
+    # Buyer tries to jump from 900 to 1000; should be capped to 930.
+    mock_buyer.side_effect = [
+        {"offer": 900, "message": "First offer."},
+        {"offer": 1000, "message": "Big jump."}
+    ] + [{"offer": 1000, "message": "Holding at 1000."}] * 10
+    mock_seller.side_effect = [
+        {"offer": 1000, "message": "Holding."}
+    ] * 10
+    req = NegotiationRequest(
+        product=Product(name="TV", listing_price=1000),
+        seller_min_price=800,
+        buyer_max_price=1200,
+        active_competitor_sellers=1,
+        active_interested_buyers=1
+    )
+    service = NegotiationService()
+    result = service.negotiate(req)
+    assert result.turns[2].agent == "buyer"
+    assert 900 <= result.turns[2].offer <= 930
+
+@patch("src.agents.seller.SellerAgent.propose")
+@patch("src.agents.buyer.BuyerAgent.propose")
+def test_seller_concession_cap(mock_buyer, mock_seller):
+    # Listing 1000, medium leverage -> max step 3% = 30
+    # Seller tries to drop from 1000 to 800; should be capped to 970.
+    mock_buyer.side_effect = [
+        {"offer": 900, "message": "Offer 900."}
+    ] * 10
+    mock_seller.side_effect = [
+        {"offer": 800, "message": "Big drop."}
+    ] * 10
+    req = NegotiationRequest(
+        product=Product(name="TV", listing_price=1000),
+        seller_min_price=700,
+        buyer_max_price=1200,
+        active_competitor_sellers=1,
+        active_interested_buyers=1
+    )
+    service = NegotiationService()
+    result = service.negotiate(req)
+    assert result.turns[1].agent == "seller"
+    assert 970 <= result.turns[1].offer <= 985
+
+@patch("src.agents.seller.SellerAgent.propose")
+@patch("src.agents.buyer.BuyerAgent.propose")
+def test_stall_resolution_final_offer(mock_buyer, mock_seller):
+    # Both sides repeat offers; system should propose final midpoint.
+    mock_buyer.side_effect = [
+        {"offer": 900, "message": "Offer 900."},
+        {"offer": 900, "message": "Still 900."},
+        {"offer": 900, "message": "Still 900."}
+    ] * 10
+    mock_seller.side_effect = [
+        {"offer": 950, "message": "Offer 950."},
+        {"offer": 950, "message": "Still 950."}
+    ] * 10
+    req = NegotiationRequest(
+        product=Product(name="Chair", listing_price=1000),
+        seller_min_price=850,
+        buyer_max_price=1000,
+        seller_patience=20,
+        buyer_patience=20,
+        active_competitor_sellers=1,
+        active_interested_buyers=1
+    )
+    service = NegotiationService()
+    result = service.negotiate(req)
+    assert result.turns[-1].agent == "system"
+    assert result.reason == "Final offer invoked after both parties stalled."
 

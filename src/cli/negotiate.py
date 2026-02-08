@@ -67,7 +67,22 @@ def main():
     parser.add_argument("--seller-patience", type=int)
     parser.add_argument("--buyer-patience", type=int)
     parser.add_argument("--output-path", help="Path to save the JSON transcript")
+    parser.add_argument("--no-save", action="store_true", help="Do not save transcript to disk")
+    parser.add_argument("--noninteractive", action="store_true", help="Require all inputs via flags (no prompts)")
     args = parser.parse_args()
+
+    if args.noninteractive:
+        missing = []
+        if not args.product_name:
+            missing.append("--product-name")
+        if args.listing_price is None:
+            missing.append("--listing-price")
+        if args.role == "buyer" and args.seller_min_price is None:
+            missing.append("--seller-min-price")
+        if args.role == "seller" and args.buyer_max_price is None:
+            missing.append("--buyer-max-price")
+        if missing:
+            raise ValueError(f"Missing required flags in noninteractive mode: {', '.join(missing)}")
 
     product_name = args.product_name or input("Product name: ").strip()
     product_description = args.product_description or input("Product description (optional): ").strip()
@@ -79,6 +94,11 @@ def main():
     else:
         buyer_max_price = args.buyer_max_price or _prompt_float("Buyer maximum price")
         seller_min_price = args.seller_min_price or listing_price
+
+    if args.role == "buyer" and args.buyer_max_price is None:
+        print(f"Note: buyer max defaulted to ${buyer_max_price:.2f}")
+    if args.role == "seller" and args.seller_min_price is None:
+        print(f"Note: seller min defaulted to ${seller_min_price:.2f}")
 
     initial_seller_offer = args.initial_seller_offer
     if args.role == "seller" and initial_seller_offer is None:
@@ -125,10 +145,11 @@ def main():
     if result.reason:
         print(f"Reason: {result.reason}")
 
-    output_path = _ensure_output_path(args.output_path)
-    with open(output_path, "w") as f:
-        json.dump(result.model_dump(), f, indent=2)
-    print(f"\nSaved transcript to {output_path}")
+    if not args.no_save:
+        output_path = _ensure_output_path(args.output_path)
+        with open(output_path, "w") as f:
+            json.dump(result.model_dump(), f, indent=2)
+        print(f"\nSaved transcript to {output_path}")
 
 
 if __name__ == "__main__":
