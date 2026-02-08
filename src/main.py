@@ -63,8 +63,8 @@ def _room_for_listing(listing_id: int) -> Dict[str, Any]:
             "seller_min_price": None,
             "buyer_patience": None,
             "seller_patience": None,
-            "buyer_type": "human",
-            "seller_type": "human",
+            "buyer_delegate": False,
+            "seller_delegate": False,
         }
     return negotiation_rooms[listing_id]
 
@@ -593,20 +593,19 @@ async def negotiations_ws(websocket: WebSocket, listing_id: int):
         await websocket.close()
         return
 
-    counterparty = join_msg.get("counterparty", "human")
     if role == "buyer":
         room["buyers"].add(websocket)
-        room["buyer_type"] = "human"
-        if counterparty == "agent":
-            room["seller_type"] = "agent"
+        room["buyer_delegate"] = bool(join_msg.get("delegate"))
+        if join_msg.get("counterparty") == "agent":
+            room["seller_delegate"] = True
         buyer_max = join_msg.get("buyer_max_price")
         if buyer_max:
             room["buyer_max_price"] = float(buyer_max)
     else:
         room["sellers"].add(websocket)
-        room["seller_type"] = "human"
-        if counterparty == "agent":
-            room["buyer_type"] = "agent"
+        room["seller_delegate"] = bool(join_msg.get("delegate"))
+        if join_msg.get("counterparty") == "agent":
+            room["buyer_delegate"] = True
         seller_min = join_msg.get("seller_min_price")
         if seller_min:
             room["seller_min_price"] = float(seller_min)
@@ -654,7 +653,7 @@ async def negotiations_ws(websocket: WebSocket, listing_id: int):
                 await ws.send_json({"type": "turn", "turn": turn})
 
             # Agent response if enabled
-            if role == "buyer" and room["seller_type"] == "agent" and listing:
+            if role == "buyer" and room["seller_delegate"] and listing:
                 agent = SellerAgent(
                     float(room["seller_min_price"] or (listing.price * 0.8))
                 )
@@ -677,7 +676,7 @@ async def negotiations_ws(websocket: WebSocket, listing_id: int):
                 for ws in list(room["buyers"] | room["sellers"]):
                     await ws.send_json({"type": "turn", "turn": seller_turn})
 
-            if role == "seller" and room["buyer_type"] == "agent" and listing:
+            if role == "seller" and room["buyer_delegate"] and listing:
                 buyer_max = room["buyer_max_price"] or float(listing.price)
                 agent = BuyerAgent(float(buyer_max))
                 context = _build_context(room["turns"])
