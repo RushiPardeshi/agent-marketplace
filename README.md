@@ -1,15 +1,25 @@
 # agent-marketplace
 
 ## Overview
-Proof of Concept: Can a seller AI agent and a buyer AI agent reach an agreement through negotiation? This FastAPI backend simulates automated price negotiation using OpenAI's GPT models.
+Proof of Concept: Can AI agents (sellers and buyers) reach agreements through negotiation in a marketplace? This FastAPI backend simulates automated price negotiation using OpenAI's GPT models.
+
+**Now supports multi-agent marketplace scenarios** with multiple buyers and sellers negotiating simultaneously, with the ability to switch between sellers and track competitive dynamics.
 
 ## Features
 - **Smart Agents**: Seller and buyer agents negotiate price for a product, acting as advocates for their respective users.
+- **Multi-Agent Marketplace**: Support for multiple buyers and sellers negotiating simultaneously in a free market
+- **Automated Sessions**: Run entire negotiation sessions automatically with agent autonomy
+- **Agent Autonomy**: Buyer agents can autonomously decide when to switch sellers based on negotiation progress
+- **Buyer Preferences**: Buyers specify which sellers they're interested in; can add more sellers later
+- **Deal Finality**: Once a deal is made, both buyer and seller become inactive (product is sold)
+- **Seller Switching**: Buyers can end negotiations and switch between sellers without lock-in
+- **Marketplace Visibility**: Agents are aware of competitive dynamics (number of buyers/sellers) to inform strategy
 - **Listing Price**: Negotiations start from a public listing price set by the seller.
 - **Realistic Haggling**: Agents negotiate like humans, using strategic lowball/highball anchors and making incremental concessions.
 - **Dynamic Patience**: The number of negotiation rounds is dynamically calculated based on market conditions (supply/demand).
 - **Market Leverage**: Agents adjust their strategy (aggressive vs. stubborn) based on the number of active competitors and interested buyers.
 - **Turn-based**: Fully automated negotiation loop that ends when a deal is struck or patience runs out.
+- **In-Memory Sessions**: Repository pattern for easy migration to Postgres/Supabase in the future
 - **Testing**: Automated tests with mocked LLM calls for fast, free, deterministic testing.
 - **Search Copilot**: AI-powered natural language search with semantic matching using OpenAI embeddings
 - **WebSocket Chat**: Real-time conversational interface for search, refinement suggestions, and negotiation
@@ -44,6 +54,8 @@ Start the FastAPI server:
 ```sh
 python -m uvicorn src.main:app --reload
 ```
+
+### Single Agent Negotiation
 
 Trigger a negotiation (example):
 ```sh
@@ -91,6 +103,182 @@ Notes:
 - If the human is the buyer, you only need to provide `seller_min_price` (buyer max is not required).
 - If the human is the seller, you only need to provide `buyer_max_price` (seller min is not required).
 - The transcript is printed and saved to `./negotiation_outputs/` by default (or pass `--output-path`).
+
+### Multi-Agent Marketplace
+
+The multi-agent API enables scenarios with multiple buyers and sellers negotiating in parallel.
+
+#### Create a Session
+
+**Note:** Buyers must specify which sellers they're interested in via `interested_seller_ids`. They can only negotiate with sellers in this list (but can add more later).
+
+```sh
+curl -X POST http://localhost:8000/multi-agent/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "buyers": [
+      {"agent_id": "buyer_1", "max_price": 900, "interested_seller_ids": ["seller_1", "seller_2"]},
+      {"agent_id": "buyer_2", "max_price": 70, "interested_seller_ids": ["seller_2"]}
+    ],
+    "sellers": [
+      {"agent_id": "seller_1", "listing_id": 1, "min_price": 700, "listing_price": 850},
+      {"agent_id": "seller_2", "listing_id": 2, "min_price": 40, "listing_price": 60}
+    ]
+  }' | jq .
+```
+
+**Response:**
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "buyers": {"buyer_1": {...}, "buyer_2": {...}},
+  "sellers": {"seller_1": {...}, "seller_2": {...}},
+  "marketplace_context": {
+    "total_active_buyers": 2,
+    "total_active_sellers": 2,
+    "active_negotiations_count": 0
+  }
+}
+```
+
+#### Start Buyer-Seller Negotiation
+```sh
+curl -X POST http://localhost:8000/multi-agent/sessions/{session_id}/negotiations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "buyer_id": "buyer_1",
+    "seller_id": "seller_1"
+  }' | jq .
+```
+
+#### Execute Negotiation Turn
+```sh
+curl -X POST http://localhost:8000/multi-agent/sessions/{session_id}/negotiations/{negotiation_id}/turn \
+  -H "Content-Type: application/json" | jq .
+```
+
+**Response:**
+```json
+{
+  "turn": {
+    "round": 1,
+    "agent_id": "buyer_1",
+    "agent_role": "buyer",
+    "offer": 900,
+    "message": "I'd like to offer $900 for this laptop..."
+  },
+  "negotiation_status": {
+    "negotiation_id": "...",
+    "status": "active",
+    "buyer_leverage": "medium",
+    "seller_leverage": "medium"
+  }
+}
+```
+
+#### Switch Seller
+Buyers can end current negotiation and switch to another seller:
+```sh
+curl -X POST http://localhost:8000/multi-agent/sessions/{session_id}/switch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "buyer_id": "buyer_1",
+    "current_seller_id": "seller_1",
+    "new_seller_id": "seller_2" 
+  }' | jq .
+```
+
+#### View Session Status
+```sh
+curl http://localhost:8000/multi-agent/sessions/{session_id} | jq .
+```
+
+**Response includes:**
+- All active negotiations
+- All completed negotiations (agreed, deadlock, switched)
+- Marketplace context with supply/demand metrics
+
+#### Get Negotiation Transcript
+```sh
+curl http://localhost:8000/multi-agent/sessions/{session_id}/negotiations/{negotiation_id}/transcript | jq .
+```
+
+**Returns full turn-by-turn history with:**
+- Agent IDs and roles
+- Offers and messages
+- Negotiation outcome
+
+#### Add Seller to Buyer Interests
+Allow a buyer to add more sellers to their interest list after session creation:
+```sh
+curl -X POST http://localhost:8000/multi-agent/sessions/{session_id}/add-seller-interest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "buyer_id": "buyer_1",
+    "seller_id": "seller_3"
+  }' | jq .
+```
+
+#### Automate Entire Session
+Run the entire session automatically with agent autonomy. Buyer agents will negotiate with their interested sellers and can autonomously decide to switch sellers. Once a deal is made, both buyer and seller become inactive.
+
+```sh
+curl -X POST http://localhost:8000/multi-agent/sessions/{session_id}/automate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "max_rounds_per_negotiation": 20,
+    "allow_agent_switching": true
+  }' | jq .
+```
+
+**Response:**
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "summary": {
+    "total_deals": 2,
+    "total_deadlocks": 0,
+    "total_switches": 1,
+    "total_rounds": 15
+  },
+  "deals": [
+    {
+      "buyer_id": "buyer_1",
+      "seller_id": "seller_2",
+      "final_price": 825,
+      "rounds": 8
+    }
+  ],
+  "deadlocks": [],
+  "switches": [
+    {
+      "buyer_id": "buyer_1",
+      "from_seller": "seller_1",
+      "to_seller": "seller_2",
+      "rounds_before_switch": 5
+    }
+  ]
+}
+```
+
+**How Agent Autonomy Works:**
+
+1. **Buyer Decides to Switch**: Buyer agents autonomously decide to switch sellers based on:
+   - Stuck for 3+ rounds with no progress
+   - Seller asking 15%+ above buyer's budget with few rounds left
+   - Buyer made many concessions but seller barely budged
+   - Must have alternative sellers available in their interest list
+
+2. **Deal Finality**: Once a buyer-seller pair agrees on a price:
+   - Both agents are marked as inactive
+   - They stop participating in all negotiations
+   - Product is considered sold
+   - Active buyer/seller counts are updated
+
+3. **Session Completion**: The automated session runs until:
+   - All buyers have made deals (or exhausted options)
+   - All sellers have sold their products
+   - All active negotiations reach deadlock or max rounds
 
 ## Marketplace Listings (SQLite)
 
@@ -356,15 +544,94 @@ Delete `app.db` and restart server to re-seed listings.
 4. **Consensus**: The negotiation continues until one agent accepts the other's offer, or until an agent's patience runs out (deadlock).
 5. **Result**: The API returns the full transcript, the final price, and the reason for the agreement (or failure).
 
+### Multi-Agent Architecture
+
+The multi-agent marketplace extends the single buyer-seller negotiation to support:
+
+#### Free Market Design
+- **Buyer Preferences**: Buyers specify interested sellers upfront; can only negotiate with sellers in their list
+- **Add More Sellers**: Buyers can expand their interest list anytime via API
+- **Manual Pairing**: Buyers explicitly choose which seller to negotiate with (no automatic matching)
+- **Agent Autonomy**: Buyer agents can autonomously decide to switch sellers based on negotiation progress
+- **No Lock-In**: Buyers can end negotiations and switch sellers at any time
+- **Deal Finality**: Once a deal is made, both buyer and seller become inactive (product sold)
+- **Full Visibility**: All agents see marketplace context (total buyers/sellers, active negotiations)
+
+#### Session Management
+- **In-Memory Storage**: Uses repository pattern for flexible storage (easy migration to Postgres/Supabase)
+- **Session State**: Tracks all buyers, sellers, active/completed negotiations in one session
+- **Active Status**: Buyers and sellers marked inactive after making deals
+- **Marketplace Context**: Real-time supply/demand metrics inform agent leverage calculations
+
+#### Negotiation Flow
+1. **Session Creation**: Define multiple buyers (with max prices, interested sellers) and sellers (with min prices, listings)
+2. **Start Negotiation**: Pair one buyer with one seller for 1-1 negotiation (validates buyer interest)
+3. **Execute Turns**: Each turn alternates between buyer and seller with marketplace awareness
+4. **Autonomous Switching**: Buyer agent can decide to switch sellers based on progress criteria
+5. **Manual Switching**: Buyer can also explicitly switch from one seller to another
+6. **Deal Completion**: When agreed, both agents marked inactive and removed from market
+7. **Track Outcomes**: Negotiations end with status: `agreed`, `deadlock`, `switched`
+
+#### Automated Sessions
+The `POST /automate` endpoint runs entire sessions automatically:
+- Each buyer negotiates with their first interested seller
+- Buyer agents autonomously switch if:
+  - Stuck for 3+ rounds without progress
+  - Seller asking 15%+ above budget with few rounds left
+  - Buyer made many concessions but seller barely budged
+- Once a deal is made, both agents become inactive
+- Session completes when all possible deals are made or deadlocked
+
+#### Dynamic Leverage
+- **High Buyer Leverage**: Many sellers (3+) → buyers more aggressive
+- **High Seller Leverage**: Many buyers (3+) → sellers more aggressive  
+- **Medium/Low**: Balanced or single-party markets → more cautious strategies
+
+#### Safeguards
+- **Monotonic Prices**: Sellers never increase offers, buyers never decrease offers
+- **Stall Detection**: If both parties hold firm for 2+ rounds, trigger final offer mechanism
+- **Structured State**: Agents receive offer history directly (no brittle string parsing)
+
 ## Testing
 Run all automated tests (uses mocks, no real API calls):
 ```sh
 pytest tests/ -v
 ```
 
+Run specific test suites:
+```sh
+# Single-agent negotiation tests
+pytest tests/test_negotiation.py -v
+
+# Multi-agent marketplace tests
+pytest tests/test_multi_agent.py -v
+
+# Agent behavior tests (including monotonic price safeguards)
+pytest tests/test_agents.py -v
+```
+
 ## Project Structure
-- `src/` - main backend code (agents, negotiation logic, FastAPI app)
-- `tests/` - automated tests (mocked agents, negotiation, API)
+- `src/` - main backend code
+  - `agents/` - Base, Buyer, Seller agent implementations
+  - `models/` - Database models and Pydantic schemas
+  - `services/` - Negotiation orchestration (single & multi-agent)
+  - `repositories/` - Session storage abstraction (in-memory with DB migration path)
+  - `main.py` - FastAPI application with REST endpoints
+- `tests/` - automated tests
+  - `test_negotiation.py` - Single-agent negotiation tests
+  - `test_multi_agent.py` - Multi-agent marketplace tests
+  - `test_agents.py` - Agent behavior and safeguards
+  - `test_api.py` - API endpoint tests
+
+## Future Enhancements
+
+The multi-agent marketplace provides a foundation for:
+- **Database Persistence**: Migrate from in-memory to Postgres/Supabase using existing repository interface
+- **Advanced Matching**: Automatic buyer-seller pairing based on preferences and history
+- **Reputation System**: Track agent success rates and negotiation styles
+- **Concurrent Negotiations**: Buyers negotiating with multiple sellers simultaneously
+- **Multi-Round Auctions**: Support for sealed bids, Dutch auctions, etc.
+- **CLI for Multi-Agent**: Extend `src/cli/negotiate.py` to support multi-agent sessions
 
 ---
 This PoC is for research and demonstration purposes only.

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
 from enum import Enum
 
 class Product(BaseModel):
@@ -102,6 +102,94 @@ class ListingOut(ListingCreate):
 class AIResponse(BaseModel):
     offer: float
     message: str
+
+# Multi-Agent Negotiation Models
+
+class AgentIdentity(BaseModel):
+    agent_id: str  # e.g., "buyer_1", "seller_1"
+    role: str  # "buyer" or "seller"
+
+class BuyerConfig(BaseModel):
+    agent_id: str
+    max_price: float = Field(..., gt=0)
+    interested_seller_ids: List[str] = Field(default_factory=list)  # Sellers this buyer wants to negotiate with
+    initial_offer: Optional[float] = None
+    patience: Optional[int] = None
+    active: bool = True  # False once buyer makes a deal
+
+class SellerConfig(BaseModel):
+    agent_id: str
+    listing_id: int
+    min_price: float = Field(..., gt=0)
+    listing_price: float = Field(..., gt=0)
+    initial_offer: Optional[float] = None
+    patience: Optional[int] = None
+    active: bool = True  # False once seller makes a deal
+
+class MarketplaceContext(BaseModel):
+    """Global marketplace awareness for all agents"""
+    total_active_buyers: int = 0
+    total_active_sellers: int = 0
+    active_negotiations_count: int = 0
+    recent_completed_prices: List[float] = Field(default_factory=list)
+    
+class MultiAgentNegotiationTurn(BaseModel):
+    round: int
+    negotiation_id: str  # Which specific 1-1 negotiation this belongs to
+    agent_id: str  # "buyer_1", "seller_2", etc.
+    agent_role: str  # "buyer" or "seller"
+    offer: float
+    message: str
+
+class NegotiationState(BaseModel):
+    negotiation_id: str
+    buyer_id: str
+    seller_id: str
+    buyer_agent: Optional[dict] = None  # Serialized agent state
+    seller_agent: Optional[dict] = None
+    buyer_patience: int
+    seller_patience: int
+    buyer_leverage: str = "medium"
+    seller_leverage: str = "medium"
+    seller_target: float
+    turns: List[MultiAgentNegotiationTurn] = Field(default_factory=list)
+    last_buyer_offer: Optional[float] = None
+    last_seller_offer: Optional[float] = None
+    buyer_stall_count: int = 0
+    seller_stall_count: int = 0
+    status: str = "active"  # "active", "agreed", "deadlocked", "switched"
+    agreed: bool = False
+    final_price: Optional[float] = None
+    reason: Optional[str] = None
+    
+class MultiAgentSession(BaseModel):
+    session_id: str
+    listing_ids: List[int]
+    buyers: Dict[str, BuyerConfig]  # buyer_id -> config
+    sellers: Dict[str, SellerConfig]  # seller_id -> config
+    active_negotiations: Dict[str, NegotiationState] = Field(default_factory=dict)  # negotiation_id -> state
+    completed_negotiations: List[NegotiationState] = Field(default_factory=list)
+    marketplace_context: MarketplaceContext = Field(default_factory=MarketplaceContext)
+    created_at: Optional[str] = None
+
+class CreateSessionRequest(BaseModel):
+    buyers: List[BuyerConfig]
+    sellers: List[SellerConfig]
+    
+class StartNegotiationRequest(BaseModel):
+    buyer_id: str
+    seller_id: str
+
+class AutomateSessionRequest(BaseModel):
+    """Request to run entire session automatically with agent autonomy"""
+    max_rounds_per_negotiation: int = Field(20, description="Max turns per negotiation before giving up")
+    allow_agent_switching: bool = Field(True, description="Allow buyer agents to switch sellers autonomously")
+
+class SessionResponse(BaseModel):
+    session_id: str
+    marketplace_context: MarketplaceContext
+    active_negotiations: List[NegotiationState]
+    completed_negotiations: List[NegotiationState]
 
 class SearchRequest(BaseModel):
     query: str = Field(..., description="Natural language query, e.g., 'I want a laptop under $1000 with good battery'")

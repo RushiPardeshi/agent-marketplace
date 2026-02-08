@@ -1,7 +1,9 @@
 from fastapi import FastAPI, HTTPException, Depends, Body, Path, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from src.services.negotiation import NegotiationService
+from src.services.multi_agent_negotiation import MultiAgentNegotiationService
 from src.services.search import SearchService
+from src.repositories import InMemorySessionRepository
 from sqlalchemy.orm import Session
 from src.db import Base, engine, get_db, SessionLocal
 from src.models.db_models import Listing
@@ -17,6 +19,12 @@ from src.models.schemas import (
     SearchResponse,
     ParsedQuery,
     SearchResult,
+    CreateSessionRequest,
+    StartNegotiationRequest,
+    AutomateSessionRequest,
+    SessionResponse,
+    BuyerConfig,
+    SellerConfig,
 )
 from openai import OpenAI
 from src.config import settings
@@ -41,6 +49,14 @@ app.add_middleware(
 
 negotiation_service = NegotiationService()
 search_service = SearchService()
+
+# Multi-agent negotiation service with in-memory repository
+session_repository = InMemorySessionRepository()
+multi_agent_service = None  # Will be initialized with DB dependency
+
+def get_multi_agent_service(db: Session = Depends(get_db)) -> MultiAgentNegotiationService:
+    """Dependency to get multi-agent service with DB connection"""
+    return MultiAgentNegotiationService(repository=session_repository, db=db)
 
 # Reusable OpenAI client for refinement suggestions
 suggestion_client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -233,6 +249,254 @@ def create_listing(payload: ListingCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(listing)
     return listing
+
+# Multi-Agent Negotiation Endpoints
+
+@app.post("/multi-agent/sessions")
+def create_multi_agent_session(
+    request: CreateSessionRequest,
+    service: MultiAgentNegotiationService = Depends(get_multi_agent_service)
+):
+    """Create a new multi-agent negotiation session with multiple buyers and sellers"""
+    try:
+        session = service.create_session(request)
+        return {
+            "session_id": session.session_id,
+            "marketplace_context": session.marketplace_context,
+            "buyers": list(session.buyers.keys()),
+            "sellers": list(session.sellers.keys()),
+            "message": f"Session created with {len(session.buyers)} buyers and {len(session.sellers)} sellers"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/multi-agent/sessions/{session_id}/negotiations")
+def start_negotiation_in_session(
+    session_id: str,
+    request: StartNegotiationRequest,
+    service: MultiAgentNegotiationService = Depends(get_multi_agent_service)
+):
+    """Start a 1-1 negotiation between a buyer and seller"""
+    try:
+        negotiation = service.start_negotiation(
+            session_id=session_id,
+            buyer_id=request.buyer_id,
+            seller_id=request.seller_id
+        )
+        return {
+            "negotiation_id": negotiation.negotiation_id,
+            "buyer_id": negotiation.buyer_id,
+            "seller_id": negotiation.seller_id,
+            "buyer_leverage": negotiation.buyer_leverage,
+            "seller_leverage": negotiation.seller_leverage,
+            "status": negotiation.status,
+            "message": f"Negotiation started between {request.buyer_id} and {request.seller_id}"
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/multi-agent/sessions/{session_id}/negotiations/{negotiation_id}/turn")
+def execute_negotiation_turn(
+    session_id: str,
+    negotiation_id: str,
+    service: MultiAgentNegotiationService = Depends(get_multi_agent_service)
+):
+    """Execute one turn in a specific negotiation"""
+    try:
+        turn = service.execute_turn(session_id, negotiation_id)
+        
+        # Get updated negotiation state
+        session = service.get_session_status(session_id)
+        negotiation = session.active_negotiations.get(negotiation_id)
+        if not negotiation:
+            # Check completed
+            for completed in session.completed_negotiations:
+                if completed.negotiation_id == negotiation_id:
+                    negotiation = completed
+                    break
+        
+        return {
+            "turn": turn,
+            "negotiation_status": negotiation.status if negotiation else "unknown",
+            "agreed": negotiation.agreed if negotiation else False,
+            "final_price": negotiation.final_price if negotiation else None,
+            "reason": negotiation.reason if negotiation else None
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/multi-agent/sessions/{session_id}/switch")
+def switch_seller_in_session(
+    session_id: str,
+    buyer_id: str = Body(...),
+    current_seller_id: str = Body(...),
+    new_seller_id: str = Body(...),
+    service: MultiAgentNegotiationService = Depends(get_multi_agent_service)
+):
+    """Switch a buyer from one seller to another"""
+    try:
+        new_negotiation_id = service.switch_seller(
+            session_id=session_id,
+            buyer_id=buyer_id,
+            current_seller_id=current_seller_id,
+            new_seller_id=new_seller_id
+        )
+        return {
+            "message": f"Buyer {buyer_id} switched from {current_seller_id} to {new_seller_id}",
+            "new_negotiation_id": new_negotiation_id
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/multi-agent/sessions/{session_id}")
+def get_session_status(
+    session_id: str,
+    service: MultiAgentNegotiationService = Depends(get_multi_agent_service)
+):
+    """Get current state of all negotiations in a session"""
+    try:
+        session = service.get_session_status(session_id)
+        return {
+            "session_id": session.session_id,
+            "marketplace_context": session.marketplace_context,
+            "active_negotiations": [
+                {
+                    "negotiation_id": neg.negotiation_id,
+                    "buyer_id": neg.buyer_id,
+                    "seller_id": neg.seller_id,
+                    "status": neg.status,
+                    "turns": len(neg.turns),
+                    "last_buyer_offer": neg.last_buyer_offer,
+                    "last_seller_offer": neg.last_seller_offer,
+                    "buyer_patience": neg.buyer_patience,
+                    "seller_patience": neg.seller_patience
+                }
+                for neg in session.active_negotiations.values()
+            ],
+            "completed_negotiations": [
+                {
+                    "negotiation_id": neg.negotiation_id,
+                    "buyer_id": neg.buyer_id,
+                    "seller_id": neg.seller_id,
+                    "status": neg.status,
+                    "agreed": neg.agreed,
+                    "final_price": neg.final_price,
+                    "reason": neg.reason,
+                    "turns": len(neg.turns)
+                }
+                for neg in session.completed_negotiations
+            ]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/multi-agent/sessions/{session_id}/negotiations/{negotiation_id}/transcript")
+def get_negotiation_transcript(
+    session_id: str,
+    negotiation_id: str,
+    service: MultiAgentNegotiationService = Depends(get_multi_agent_service)
+):
+    """Get full transcript of a specific negotiation"""
+    try:
+        session = service.get_session_status(session_id)
+        
+        # Search in active negotiations
+        negotiation = session.active_negotiations.get(negotiation_id)
+        if not negotiation:
+            # Search in completed negotiations
+            for completed in session.completed_negotiations:
+                if completed.negotiation_id == negotiation_id:
+                    negotiation = completed
+                    break
+        
+        if not negotiation:
+            raise HTTPException(status_code=404, detail=f"Negotiation {negotiation_id} not found")
+        
+        return {
+            "negotiation_id": negotiation.negotiation_id,
+            "buyer_id": negotiation.buyer_id,
+            "seller_id": negotiation.seller_id,
+            "status": negotiation.status,
+            "agreed": negotiation.agreed,
+            "final_price": negotiation.final_price,
+            "reason": negotiation.reason,
+            "turns": [
+                {
+                    "round": turn.round,
+                    "agent_id": turn.agent_id,
+                    "agent_role": turn.agent_role,
+                    "offer": turn.offer,
+                    "message": turn.message
+                }
+                for turn in negotiation.turns
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/multi-agent/sessions/{session_id}/add-seller-interest")
+def add_seller_to_buyer_interests(
+    session_id: str,
+    buyer_id: str = Body(...),
+    seller_id: str = Body(...),
+    service: MultiAgentNegotiationService = Depends(get_multi_agent_service)
+):
+    """Add a seller to a buyer's interest list"""
+    try:
+        service.add_seller_to_buyer_interests(session_id, buyer_id, seller_id)
+        return {
+            "message": f"Added seller {seller_id} to buyer {buyer_id}'s interests",
+            "buyer_id": buyer_id,
+            "seller_id": seller_id
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/multi-agent/sessions/{session_id}/automate")
+def automate_session(
+    session_id: str,
+    request: AutomateSessionRequest = Body(...),
+    service: MultiAgentNegotiationService = Depends(get_multi_agent_service)
+):
+    """
+    Execute entire session automatically with agent autonomy.
+    Buyers will negotiate with their interested sellers and can switch autonomously.
+    Once a deal is made, both buyer and seller become inactive.
+    """
+    try:
+        results = service.execute_automated_session(
+            session_id=session_id,
+            max_rounds_per_negotiation=request.max_rounds_per_negotiation,
+            allow_agent_switching=request.allow_agent_switching
+        )
+        return {
+            "session_id": session_id,
+            "summary": {
+                "total_deals": len(results["deals_made"]),
+                "total_deadlocks": len(results["deadlocks"]),
+                "total_switches": len(results["switches"]),
+                "total_rounds": results["total_rounds"]
+            },
+            "deals": results["deals_made"],
+            "deadlocks": results["deadlocks"],
+            "switches": results["switches"]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/search", response_model=SearchResponse)
 def search_products(
