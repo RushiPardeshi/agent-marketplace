@@ -1,7 +1,7 @@
 from typing import Callable
 from src.agents.seller import SellerAgent
 from src.agents.buyer import BuyerAgent
-from src.models.schemas import NegotiationRequest, NegotiationTurn, NegotiationResult, MarketBehavior
+from src.models.schemas import NegotiationRequest, NegotiationTurn, NegotiationResult
 
 class NegotiationService:
     def __init__(self):
@@ -48,6 +48,7 @@ class NegotiationService:
     def negotiate(self, req: NegotiationRequest) -> NegotiationResult:
         seller = SellerAgent(req.seller_min_price)
         buyer = BuyerAgent(req.buyer_max_price)
+        buyer_is_agent = True
         turns = []
         context = ""
         round_num = 1
@@ -81,10 +82,20 @@ class NegotiationService:
         agreed = False
         final_price = None
         reason = None
-        last_buyer_offer = None
-        last_seller_offer = None
         buyer_stall_count = 0
         seller_stall_count = 0
+
+        if req.initial_seller_message:
+            turns.append(
+                NegotiationTurn(
+                    round=round_num,
+                    agent="seller",
+                    offer=seller_offer,
+                    message=req.initial_seller_message,
+                )
+            )
+            context += f"\nSeller offers ${seller_offer}: {req.initial_seller_message}"
+            round_num += 1
         
         while buyer_patience > 0 and seller_patience > 0:
             if agent_turn == "buyer":
@@ -94,9 +105,19 @@ class NegotiationService:
                 # Use description if available
                 desc = req.product.description if req.product.description else req.product.name
                 
-                offer_data = buyer.propose(context, last_offer, rounds_left=buyer_patience, market_context=market_context, product_description=desc)
-                offer = offer_data.get("offer", last_offer)
-                message = offer_data.get("message", "")
+                if last_buyer_offer is None and req.initial_buyer_offer is not None:
+                    offer = req.initial_buyer_offer
+                    message = req.initial_buyer_message or "Initial buyer offer."
+                else:
+                    offer_data = buyer.propose(
+                        context,
+                        last_offer,
+                        rounds_left=buyer_patience,
+                        market_context=market_context,
+                        product_description=desc,
+                    )
+                    offer = offer_data.get("offer", last_offer)
+                    message = offer_data.get("message", "")
 
                 if last_buyer_offer is not None:
                     max_step = self._max_concession(listing, buyer_leverage, buyer_patience)
@@ -184,8 +205,12 @@ class NegotiationService:
                 desc = req.product.description if req.product.description else req.product.name
                 
                 offer_data = seller.propose(context, last_offer, rounds_left=seller_patience, market_context=market_context, product_description=desc)
-                offer = offer_data.get("offer", last_offer)
-                message = offer_data.get("message", "")
+                if buyer_is_agent and last_buyer_offer is None and req.initial_buyer_offer is not None:
+                    offer = req.initial_buyer_offer
+                    message = req.initial_buyer_message or "Initial buyer offer."
+                else:
+                    offer = offer_data.get("offer", last_offer)
+                    message = offer_data.get("message", "")
 
                 if last_seller_offer is not None:
                     max_step = self._max_concession(listing, seller_leverage, seller_patience)

@@ -11,6 +11,7 @@ class Listing(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price: Mapped[float] = mapped_column(Float, nullable=False)
+    seller_min_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(

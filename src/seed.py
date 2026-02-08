@@ -89,6 +89,7 @@ def seed_listings(db: Session):
     to_add = []
     for item in DUMMY_LISTINGS:
         if item["title"] not in existing_titles:
+            item["seller_min_price"] = float(item["price"]) * 0.8
             to_add.append(Listing(**item))
 
     if to_add:

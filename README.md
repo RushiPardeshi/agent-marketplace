@@ -24,6 +24,7 @@ Proof of Concept: Can AI agents (sellers and buyers) reach agreements through ne
 - **Search Copilot**: AI-powered natural language search with semantic matching using OpenAI embeddings
 - **WebSocket Chat**: Real-time conversational interface for search, refinement suggestions, and negotiation
 - **Redis State Persistence**: Session state persists across reconnections (1-hour TTL)
+- **Realtime Listing Negotiations**: Buyer and seller chat in the same listing thread via WebSocket
 
 ## Setup
 1. Clone the repo and install dependencies:
@@ -55,8 +56,24 @@ Start the FastAPI server:
 python -m uvicorn src.main:app --reload
 ```
 
-### Single Agent Negotiation
+### Frontend (React + Vite)
+```sh
+cd frontend
+npm install
+npm run dev
+```
 
+By default, the frontend calls `http://localhost:8000`. You can override this with:
+```sh
+VITE_API_BASE_URL=http://localhost:8000 npm run dev
+```
+
+Notes:
+- The UI derives market context from the current session (e.g., number of search results) rather than manual inputs.
+- If a search query does not include a budget, the UI prompts for a maximum budget before negotiating.
+- Listing chats are real-time and shared between buyer and seller tabs.
+
+### Single Agent Negotiation
 Trigger a negotiation (example):
 ```sh
 curl -X POST http://localhost:8000/negotiate \
@@ -294,6 +311,7 @@ This repo includes a simple SQLite-backed listings store to support a dummy mark
 - SQLite database file: `app.db` (auto-created on startup)
 - `Listing` table + **10 seeded dummy listings** (seed runs only when the table is empty)
 - REST endpoints to list/search/fetch/create listings
+- Seller min price is stored on listings (kept private; not returned in listing responses)
 
 ### How to access listings (API)
 - **List all listings**
@@ -319,7 +337,8 @@ This repo includes a simple SQLite-backed listings store to support a dummy mark
       "title": "Standing Desk",
       "description": "Electric, works great",
       "price": 180,
-      "category": "furniture"
+      "category": "furniture",
+      "seller_min_price": 140
     }'
   ```
 
@@ -513,6 +532,36 @@ Sessions persist for 1 hour and survive server restarts:
 Maximum 10 searches per minute per session. Exceeding this returns:
 ```json
 {"type":"error","message":"Rate limit exceeded. Try again later."}
+```
+
+### Realtime Listing Negotiation (WebSocket)
+
+Each listing has a shared negotiation room. Buyer and seller can both join and see the same chat.
+
+#### Connect
+```sh
+websocat ws://127.0.0.1:8000/ws/negotiations/{listing_id}
+```
+
+#### Join (send once after connect)
+```json
+{"role":"buyer","name":"Alice","counterparty":"human","buyer_max_price":900}
+```
+
+```json
+{"role":"seller","name":"Bob","counterparty":"human","seller_min_price":700}
+```
+
+To negotiate with an agent instead of a human, set `counterparty` to `"agent"`.
+
+#### Send an offer
+```json
+{"type":"offer","offer":850,"message":"Can you do $850?"}
+```
+
+#### Receive updates
+```json
+{"type":"turn","turn":{"round":1,"agent":"buyer","offer":850,"message":"Can you do $850?","name":"Alice"}}
 ```
 
 ## Troubleshooting

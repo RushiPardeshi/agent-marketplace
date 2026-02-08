@@ -1,16 +1,12 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
-from enum import Enum
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional
 
 class Product(BaseModel):
     name: str
     description: Optional[str] = None
     listing_price: float = Field(..., gt=0)
-
-class MarketBehavior(str, Enum):
-    AGGRESSIVE = "aggressive"  # Wants deal fast / High demand
-    PATIENT = "patient"       # Willing to wait / Low demand
-    BALANCED = "balanced"     # Normal
 
 class NegotiationRequest(BaseModel):
     product: Product
@@ -23,13 +19,15 @@ class NegotiationRequest(BaseModel):
     
     initial_seller_offer: Optional[float] = None
     initial_buyer_offer: Optional[float] = None
+    initial_seller_message: Optional[str] = None
+    initial_buyer_message: Optional[str] = None
     
     # Deprecated/Optional (for backward compatibility or override)
     seller_patience: Optional[int] = Field(None, description="Explicit round limit override")
     buyer_patience: Optional[int] = Field(None, description="Explicit round limit override")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "product": {
                     "name": "Laptop",
@@ -46,9 +44,10 @@ class NegotiationRequest(BaseModel):
                 "buyer_patience": None,
             }
         }
+    )
 
 class ListingNegotiationRequest(BaseModel):
-    seller_min_price: float = Field(..., gt=0)
+    seller_min_price: Optional[float] = Field(None, gt=0)
     buyer_max_price: float = Field(..., gt=0)
 
     # Market Context (Supply & Demand)
@@ -57,23 +56,27 @@ class ListingNegotiationRequest(BaseModel):
 
     initial_seller_offer: Optional[float] = None
     initial_buyer_offer: Optional[float] = None
+    initial_seller_message: Optional[str] = None
+    initial_buyer_message: Optional[str] = None
 
     seller_patience: Optional[int] = Field(None, description="Explicit round limit override")
     buyer_patience: Optional[int] = Field(None, description="Explicit round limit override")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
-                "seller_min_price": 700,
                 "buyer_max_price": 900,
                 "active_competitor_sellers": 1,
                 "active_interested_buyers": 2,
                 "initial_seller_offer": None,
                 "initial_buyer_offer": None,
+                "initial_seller_message": None,
+                "initial_buyer_message": None,
                 "seller_patience": None,
                 "buyer_patience": None,
             }
         }
+    )
 
 class NegotiationTurn(BaseModel):
     round: int
@@ -92,12 +95,16 @@ class ListingCreate(BaseModel):
     description: str | None = None
     price: float
     category: str | None = None
+    seller_min_price: float | None = None
 
-class ListingOut(ListingCreate):
+class ListingOut(BaseModel):
     id: int
+    title: str
+    description: str | None = None
+    price: float
+    category: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class AIResponse(BaseModel):
     offer: float
@@ -197,8 +204,8 @@ class SearchRequest(BaseModel):
     top_k: int = Field(5, ge=1, le=20)
     use_vector: bool = Field(True, description="Use embeddings-based semantic search if available")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "query": "I need a gaming laptop with at least 16GB RAM under $1500",
                 "user_budget": 1500.0,
@@ -206,6 +213,7 @@ class SearchRequest(BaseModel):
                 "use_vector": True
             }
         }
+    )
 
 class ParsedQuery(BaseModel):
     product_type: Optional[str] = None          # "laptop"
@@ -226,8 +234,8 @@ class SearchResponse(BaseModel):
     results: List[SearchResult]
     message: str  # short AI summary like "Top match is iPhone 12 at $300..."
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "parsed_query": {
                     "product_type": "laptop",
@@ -254,3 +262,4 @@ class SearchResponse(BaseModel):
                 "message": "Found 1 great match for your gaming laptop under $1500."
             }
         }
+    )
