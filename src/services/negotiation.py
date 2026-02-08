@@ -1,3 +1,4 @@
+from typing import Callable
 from src.agents.seller import SellerAgent
 from src.agents.buyer import BuyerAgent
 from src.models.schemas import NegotiationRequest, NegotiationTurn, NegotiationResult, MarketBehavior
@@ -31,6 +32,19 @@ class NegotiationService:
                 return "low"
             return "medium"
 
+    def _max_concession(self, listing_price: float, leverage: str, rounds_left: int | None) -> float:
+        if leverage == "high":
+            pct = 0.01
+        elif leverage == "low":
+            pct = 0.06
+        else:
+            pct = 0.03
+
+        if rounds_left is not None and rounds_left <= 3:
+            pct *= 2
+
+        return max(1.0, listing_price * pct)
+
     def negotiate(self, req: NegotiationRequest) -> NegotiationResult:
         seller = SellerAgent(req.seller_min_price)
         buyer = BuyerAgent(req.buyer_max_price)
@@ -61,6 +75,8 @@ class NegotiationService:
         
         seller_offer = req.initial_seller_offer or req.product.listing_price
         last_offer = seller_offer
+        last_buyer_offer = None
+        last_seller_offer = seller_offer
         agent_turn = "buyer" # Buyer responds to the listing price
         agreed = False
         final_price = None
@@ -77,6 +93,16 @@ class NegotiationService:
                 offer_data = buyer.propose(context, last_offer, rounds_left=buyer_patience, market_context=market_context, product_description=desc)
                 offer = offer_data.get("offer", last_offer)
                 message = offer_data.get("message", "")
+
+                if last_buyer_offer is not None:
+                    max_step = self._max_concession(listing, buyer_leverage, buyer_patience)
+                    max_offer = last_buyer_offer + max_step
+                    if offer < last_buyer_offer:
+                        offer = last_buyer_offer
+                        message = f"I need to stay consistent. My offer remains at ${offer}."
+                    elif offer > max_offer:
+                        offer = max_offer
+                        message = f"I can move a bit, but my offer is ${offer}."
                 
                 # Update State
                 turns.append(NegotiationTurn(round=round_num, agent="buyer", offer=offer, message=message))
@@ -104,6 +130,7 @@ class NegotiationService:
                 buyer_patience -= 1
                 
                 last_offer = offer
+                last_buyer_offer = offer
                 agent_turn = "seller"
             else:
                 # Pass leverage context to agent
@@ -115,6 +142,19 @@ class NegotiationService:
                 offer_data = seller.propose(context, last_offer, rounds_left=seller_patience, market_context=market_context, product_description=desc)
                 offer = offer_data.get("offer", last_offer)
                 message = offer_data.get("message", "")
+
+                if last_seller_offer is not None:
+                    max_step = self._max_concession(listing, seller_leverage, seller_patience)
+                    min_offer = last_seller_offer - max_step
+                    if offer > last_seller_offer:
+                        offer = last_seller_offer
+                        message = f"I need to stay consistent. My offer remains at ${offer}."
+                    elif offer < min_offer:
+                        offer = min_offer
+                        message = f"I can make a small concession. My offer is ${offer}."
+                    if offer < last_offer:
+                        offer = last_offer
+                        message = f"I can meet you at ${offer}."
                 
                 turns.append(NegotiationTurn(round=round_num, agent="seller", offer=offer, message=message))
                 context += f"\nSeller offers ${offer}: {message}"
@@ -150,12 +190,198 @@ class NegotiationService:
                 seller_patience -= 1
                 
                 last_offer = offer
+                last_seller_offer = offer
                 agent_turn = "buyer"
             round_num += 1
             
         if not agreed:
             reason = "Negotiation ended without agreement (patience exhausted)."
             
+        return NegotiationResult(
+            agreed=agreed,
+            final_price=final_price,
+            turns=turns,
+            reason=reason
+        )
+
+    def negotiate_with_human(
+        self,
+        req: NegotiationRequest,
+        human_role: str,
+        human_propose: Callable[..., dict],
+        on_turn: Callable[[NegotiationTurn], None] | None = None,
+    ) -> NegotiationResult:
+        if human_role not in {"buyer", "seller"}:
+            raise ValueError("human_role must be 'buyer' or 'seller'")
+
+        seller = None if human_role == "seller" else SellerAgent(req.seller_min_price)
+        buyer = None if human_role == "buyer" else BuyerAgent(req.buyer_max_price)
+        seller_is_agent = seller is not None
+        buyer_is_agent = buyer is not None
+
+        turns = []
+        context = ""
+        round_num = 1
+
+        seller_leverage = self._determine_leverage("seller", req)
+        buyer_leverage = self._determine_leverage("buyer", req)
+
+        listing = req.product.listing_price
+        if seller_leverage == "high":
+            k = 0.85
+        elif seller_leverage == "medium":
+            k = 0.60
+        else:
+            k = 0.35
+
+        seller_target = req.seller_min_price + (listing - req.seller_min_price) * k
+        seller_target = max(req.seller_min_price, min(seller_target, listing))
+
+        seller_patience = req.seller_patience or self._calculate_initial_patience(seller_leverage)
+        buyer_patience = req.buyer_patience or self._calculate_initial_patience(buyer_leverage)
+
+        seller_offer = req.initial_seller_offer or req.product.listing_price
+        last_offer = seller_offer
+        last_buyer_offer = None
+        last_seller_offer = seller_offer if seller_is_agent else None
+        agent_turn = "buyer"
+        agreed = False
+        final_price = None
+        reason = None
+
+        while buyer_patience > 0 and seller_patience > 0:
+            if agent_turn == "buyer":
+                market_context = f"You have {buyer_leverage} leverage. (Competition: {req.active_competitor_sellers} other sellers)."
+                desc = req.product.description if req.product.description else req.product.name
+
+                if buyer_is_agent:
+                    offer_data = buyer.propose(
+                        context,
+                        last_offer,
+                        rounds_left=buyer_patience,
+                        market_context=market_context,
+                        product_description=desc,
+                    )
+                else:
+                    offer_data = human_propose(
+                        context,
+                        last_offer,
+                        rounds_left=buyer_patience,
+                        market_context=market_context,
+                        product_description=desc,
+                    )
+
+                offer = offer_data.get("offer", last_offer)
+                message = offer_data.get("message", "")
+
+                if buyer_is_agent and last_buyer_offer is not None:
+                    max_step = self._max_concession(listing, buyer_leverage, buyer_patience)
+                    max_offer = last_buyer_offer + max_step
+                    if offer < last_buyer_offer:
+                        offer = last_buyer_offer
+                        message = f"I need to stay consistent. My offer remains at ${offer}."
+                    elif offer > max_offer:
+                        offer = max_offer
+                        message = f"I can move a bit, but my offer is ${offer}."
+
+                turns.append(NegotiationTurn(round=round_num, agent="buyer", offer=offer, message=message))
+                if on_turn:
+                    on_turn(turns[-1])
+                context += f"\nBuyer offers ${offer}: {message}"
+
+                if abs(offer - last_offer) < 0.01:
+                    agreed = True
+                    final_price = offer
+                    reason = "Buyer accepted seller's previous offer."
+                    turns[-1].message = f"Deal. I accept ${offer}."
+                    break
+
+                buyer_patience -= 1
+                last_offer = offer
+                if buyer_is_agent:
+                    last_buyer_offer = offer
+                agent_turn = "seller"
+            else:
+                market_context = f"You have {seller_leverage} leverage. (Demand: {req.active_interested_buyers} interested buyers)."
+                desc = req.product.description if req.product.description else req.product.name
+
+                if seller_is_agent:
+                    offer_data = seller.propose(
+                        context,
+                        last_offer,
+                        rounds_left=seller_patience,
+                        market_context=market_context,
+                        product_description=desc,
+                    )
+                else:
+                    offer_data = human_propose(
+                        context,
+                        last_offer,
+                        rounds_left=seller_patience,
+                        market_context=market_context,
+                        product_description=desc,
+                    )
+
+                offer = offer_data.get("offer", last_offer)
+                message = offer_data.get("message", "")
+
+                if seller_is_agent and last_seller_offer is not None:
+                    max_step = self._max_concession(listing, seller_leverage, seller_patience)
+                    min_offer = last_seller_offer - max_step
+                    if offer > last_seller_offer:
+                        offer = last_seller_offer
+                        message = f"I need to stay consistent. My offer remains at ${offer}."
+                    elif offer < min_offer:
+                        offer = min_offer
+                        message = f"I can make a small concession. My offer is ${offer}."
+                    if offer < last_offer:
+                        offer = last_offer
+                        message = f"I can meet you at ${offer}."
+
+                turns.append(NegotiationTurn(round=round_num, agent="seller", offer=offer, message=message))
+                if on_turn:
+                    on_turn(turns[-1])
+                context += f"\nSeller offers ${offer}: {message}"
+
+                if abs(offer - last_offer) < 0.01:
+                    if seller_is_agent:
+                        if last_offer >= seller_target:
+                            agreed = True
+                            final_price = offer
+                            reason = "Seller accepted buyer's previous offer."
+                            turns[-1].message = f"Deal. I accept ${offer}."
+                            break
+                        else:
+                            counter_offer = max(seller_target, last_offer + 1.0)
+                            turns[-1].offer = counter_offer
+                            turns[-1].message = "I can't do that, but I can meet you here."
+                            offer = counter_offer
+                            last_offer = offer
+                            context += f" (Corrected to ${offer})"
+
+                            seller_patience -= 1
+                            if seller_is_agent:
+                                last_seller_offer = offer
+                            agent_turn = "buyer"
+                            round_num += 1
+                            continue
+                    else:
+                        agreed = True
+                        final_price = offer
+                        reason = "Seller accepted buyer's previous offer."
+                        turns[-1].message = f"Deal. I accept ${offer}."
+                        break
+
+                seller_patience -= 1
+                last_offer = offer
+                if seller_is_agent:
+                    last_seller_offer = offer
+                agent_turn = "buyer"
+            round_num += 1
+
+        if not agreed:
+            reason = "Negotiation ended without agreement (patience exhausted)."
+
         return NegotiationResult(
             agreed=agreed,
             final_price=final_price,

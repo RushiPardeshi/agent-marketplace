@@ -73,6 +73,25 @@ curl -X POST http://localhost:8000/listings/8/negotiate \
   }' | jq .
 ```
 
+Human-Agent negotiation (CLI conversational flow):
+```sh
+python -m src.cli.negotiate \
+  --role buyer \
+  --product-name "Laptop" \
+  --product-description "Lightly used, includes charger" \
+  --listing-price 1200 \
+  --seller-min-price 900 \
+  --active-competitor-sellers 1 \
+  --active-interested-buyers 5
+```
+
+Notes:
+- The CLI prompts you for offers and short messages each turn.
+- Use `accept` to accept the last offer.
+- If the human is the buyer, you only need to provide `seller_min_price` (buyer max is not required).
+- If the human is the seller, you only need to provide `buyer_max_price` (seller min is not required).
+- The transcript is printed and saved to `./negotiation_outputs/` by default (or pass `--output-path`).
+
 ## Marketplace Listings (SQLite)
 
 This repo includes a simple SQLite-backed listings store to support a dummy marketplace.
