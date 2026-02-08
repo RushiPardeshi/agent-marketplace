@@ -15,6 +15,8 @@ class BuyerAgent(BaseAgent):
         return (
             f"You are an expert buyer negotiating the price of a product. "
             f"Product Description: {product_description} "
+            f"As a buyer, you should generally aim to INCREASE or at least MAINTAIN your offer after your first offer, and avoid decreasing it unless there is a very strong strategic reason. "
+            f"Review your previous offers in the context carefully and be consistent with your prior negotiation stance. "
             f"Your goal is to purchase the product for the lowest possible price. "
             f"Your absolute maximum budget is ${self.max_price}. "
             f"Market Context: {market_context} "
@@ -51,15 +53,15 @@ class BuyerAgent(BaseAgent):
             valid_last_offer = 0.0
 
         # Programmatic safeguard: Rationality check - Don't offer more than the seller is asking
-        if valid_last_offer > 0 and result["offer"] > valid_last_offer:
-             result["offer"] = valid_last_offer
-             result["message"] = f"Deal. I accept ${valid_last_offer}."
+        # if valid_last_offer > 0 and result["offer"] > valid_last_offer:
+        #      result["offer"] = valid_last_offer
+        #      result["message"] = f"Deal. I accept ${valid_last_offer}."
 
         # Programmatic safeguard: strict enforcement of ceiling
-        if result["offer"] > self.max_price:
-            result["offer"] = self.max_price
-            # Overwrite the message to prevent confusion
-            result["message"] = f"I cannot go any higher than this."
+        # if result["offer"] > self.max_price:
+        #     result["offer"] = self.max_price
+        #     # Overwrite the message to prevent confusion
+        #     result["message"] = f"I cannot go any higher than this."
 
         # Sanitization: Prevent leaking max price or specific phrases
         msg_lower = result["message"].lower()

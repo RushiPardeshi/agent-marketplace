@@ -81,6 +81,10 @@ class NegotiationService:
         agreed = False
         final_price = None
         reason = None
+        last_buyer_offer = None
+        last_seller_offer = None
+        buyer_stall_count = 0
+        seller_stall_count = 0
         
         while buyer_patience > 0 and seller_patience > 0:
             if agent_turn == "buyer":
@@ -107,6 +111,12 @@ class NegotiationService:
                 # Update State
                 turns.append(NegotiationTurn(round=round_num, agent="buyer", offer=offer, message=message))
                 context += f"\nBuyer offers ${offer}: {message}"
+
+                if last_buyer_offer is not None and abs(offer - last_buyer_offer) < 0.01:
+                    buyer_stall_count += 1
+                else:
+                    buyer_stall_count = 0
+                last_buyer_offer = offer
                 
                 # Check agreement
                 if abs(offer - last_offer) < 0.01:
@@ -115,6 +125,40 @@ class NegotiationService:
                     reason = "Buyer accepted seller's previous offer."
                     # Force explicit acceptance message
                     turns[-1].message = f"Deal. I accept ${offer}."
+                    break
+
+                if buyer_stall_count >= 2 and seller_stall_count >= 2:
+                    midpoint = None
+                    if last_buyer_offer is not None and last_seller_offer is not None:
+                        midpoint = (last_buyer_offer + last_seller_offer) / 2
+                    else:
+                        midpoint = last_offer
+
+                    if req.seller_min_price <= req.buyer_max_price:
+                        final_offer = min(max(midpoint, req.seller_min_price), req.buyer_max_price)
+                        turns.append(
+                            NegotiationTurn(
+                                round=round_num + 1,
+                                agent="system",
+                                offer=final_offer,
+                                message="Final offer to conclude the negotiation."
+                            )
+                        )
+                        agreed = True
+                        final_price = final_offer
+                        reason = "Final offer invoked after both parties stalled."
+                    else:
+                        turns.append(
+                            NegotiationTurn(
+                                round=round_num + 1,
+                                agent="system",
+                                offer=last_offer,
+                                message="Final offer attempt failed due to non-overlapping constraints."
+                            )
+                        )
+                        agreed = False
+                        final_price = None
+                        reason = "Final offer failed due to non-overlapping constraints."
                     break
                 
                 # Calculate Patience Cost for THIS agent based on THEIR move
@@ -181,11 +225,59 @@ class NegotiationService:
                         offer = counter_offer
                         last_offer = offer
                         context += f" (Corrected to ${offer})"
+
+                        # Track stalling: if forced counter is same as previous seller offer, increment stall
+                        if last_seller_offer is not None and abs(counter_offer - last_seller_offer) < 0.01:
+                            seller_stall_count += 1
+                        else:
+                            seller_stall_count = 0
+                        last_seller_offer = counter_offer
                         
                         seller_patience -= 1
                         agent_turn = "buyer"
                         round_num += 1
                         continue
+
+                # Track stalling based on final offer (after any overrides)
+                if last_seller_offer is not None and abs(offer - last_seller_offer) < 0.01:
+                    seller_stall_count += 1
+                else:
+                    seller_stall_count = 0
+                last_seller_offer = offer
+
+                if buyer_stall_count >= 2 and seller_stall_count >= 2:
+                    midpoint = None
+                    if last_buyer_offer is not None and last_seller_offer is not None:
+                        midpoint = (last_buyer_offer + last_seller_offer) / 2
+                    else:
+                        midpoint = last_offer
+
+                    if req.seller_min_price <= req.buyer_max_price:
+                        final_offer = min(max(midpoint, req.seller_min_price), req.buyer_max_price)
+                        turns.append(
+                            NegotiationTurn(
+                                round=round_num + 1,
+                                agent="system",
+                                offer=final_offer,
+                                message="Final offer to conclude the negotiation. Both parties have reached their positions."
+                            )
+                        )
+                        agreed = True
+                        final_price = final_offer
+                        reason = "Final offer invoked after both parties stalled."
+                    else:
+                        turns.append(
+                            NegotiationTurn(
+                                round=round_num + 1,
+                                agent="system",
+                                offer=last_offer,
+                                message="Negotiation concluded. Parties could not reach an agreement due to non-overlapping constraints."
+                            )
+                        )
+                        agreed = False
+                        final_price = None
+                        reason = "Final offer failed due to non-overlapping constraints."
+                    break
 
                 seller_patience -= 1
                 
