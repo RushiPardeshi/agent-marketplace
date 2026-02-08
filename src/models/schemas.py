@@ -102,3 +102,67 @@ class ListingOut(ListingCreate):
 class AIResponse(BaseModel):
     offer: float
     message: str
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., description="Natural language query, e.g., 'I want a laptop under $1000 with good battery'")
+    user_budget: Optional[float] = Field(None, gt=0, description="Optional explicit budget override")
+    top_k: int = Field(5, ge=1, le=20)
+    use_vector: bool = Field(True, description="Use embeddings-based semantic search if available")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "query": "I need a gaming laptop with at least 16GB RAM under $1500",
+                "user_budget": 1500.0,
+                "top_k": 5,
+                "use_vector": True
+            }
+        }
+
+class ParsedQuery(BaseModel):
+    product_type: Optional[str] = None          # "laptop"
+    description: Optional[str] = None           # "good battery, 16GB"
+    max_budget: Optional[float] = None          # extracted or user-provided
+    min_budget: Optional[float] = None
+    category: Optional[str] = None
+    parse_confidence: float = Field(0.0, ge=0.0, le=1.0)  # Confidence in parsing (e.g., 1.0 if all fields extracted, 0.5 if partial)
+
+class SearchResult(BaseModel):
+    listing: ListingOut
+    relevance_score: float = Field(..., ge=0.0, le=1.0)   # normalized
+    reasons: List[str] = Field(default_factory=list)      # e.g. ["Semantic match", "Within budget"]
+    negotiation_ready: bool                               # True if listing.price <= parsed.max_budget (or user_budget)
+
+class SearchResponse(BaseModel):
+    parsed_query: ParsedQuery
+    results: List[SearchResult]
+    message: str  # short AI summary like "Top match is iPhone 12 at $300..."
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "parsed_query": {
+                    "product_type": "laptop",
+                    "description": "gaming, 16GB RAM",
+                    "max_budget": 1500.0,
+                    "min_budget": None,
+                    "category": "electronics",
+                    "parse_confidence": 0.9
+                },
+                "results": [
+                    {
+                        "listing": {
+                            "id": 1,
+                            "title": "Gaming Laptop",
+                            "description": "High-performance laptop with 16GB RAM",
+                            "price": 1200.0,
+                            "category": "electronics"
+                        },
+                        "relevance_score": 0.95,
+                        "reasons": ["Semantic match on 'gaming laptop'", "Within budget"],
+                        "negotiation_ready": True
+                    }
+                ],
+                "message": "Found 1 great match for your gaming laptop under $1500."
+            }
+        }

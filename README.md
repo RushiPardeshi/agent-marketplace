@@ -11,13 +11,29 @@ Proof of Concept: Can a seller AI agent and a buyer AI agent reach an agreement 
 - **Market Leverage**: Agents adjust their strategy (aggressive vs. stubborn) based on the number of active competitors and interested buyers.
 - **Turn-based**: Fully automated negotiation loop that ends when a deal is struck or patience runs out.
 - **Testing**: Automated tests with mocked LLM calls for fast, free, deterministic testing.
+- **Search Copilot**: AI-powered natural language search with semantic matching using OpenAI embeddings
+- **WebSocket Chat**: Real-time conversational interface for search, refinement suggestions, and negotiation
+- **Redis State Persistence**: Session state persists across reconnections (1-hour TTL)
 
 ## Setup
 1. Clone the repo and install dependencies:
 	```sh
 	pip install -r requirements.txt
 	```
-2. Copy `.env.example` to `.env` and add your OpenAI API key:
+2. Install WebSocket support (required for chat interface):
+	```sh
+	pip install 'uvicorn[standard]'
+	```
+3. Install and start Redis (required for WebSocket state persistence):
+	```sh
+	# macOS
+	brew install redis
+	redis-server
+	
+	# Verify Redis is running
+	redis-cli ping  # Should return: PONG
+	```
+4. Copy `.env.example` to `.env` and add your OpenAI API key:
 	```sh
 	cp .env.example .env
 	# Edit .env and set OPENAI_API_KEY=sk-...
@@ -129,6 +145,187 @@ This repo includes a simple SQLite-backed listings store to support a dummy mark
 - **Seed behavior**: seeding runs only if the `listings` table is empty.
   - To reset during development: stop the server, delete `app.db`, then restart.
 - `app.db` is ignored via `.gitignore` (it should not be committed).
+
+## Search Copilot (AI-Powered Semantic Search)
+
+The search copilot uses OpenAI embeddings for intelligent product matching and natural language query parsing.
+
+### REST API Search
+```sh
+curl -X POST http://127.0.0.1:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "gaming laptop under $1500 with 16GB RAM",
+    "top_k": 5,
+    "use_vector": true
+  }'
+```
+
+**Expected Response:**
+```json
+{
+  "parsed_query": {
+    "product_type": "laptop",
+    "description": "gaming, 16GB RAM",
+    "max_budget": 1500.0,
+    "parse_confidence": 0.9
+  },
+  "results": [
+    {
+      "listing": {"id": 1, "title": "Gaming Laptop", "price": 1200.0, ...},
+      "relevance_score": 0.95,
+      "reasons": ["Semantic match", "Within budget"],
+      "negotiation_ready": true
+    }
+  ],
+  "message": "Found 3 matches for 'laptop' under $1500.0."
+}
+```
+
+### WebSocket Chat Interface
+
+The chat provides a conversational experience combining search, refinements, and negotiation.
+
+#### Connect to Chat
+```sh
+# Using websocat (install: brew install websocat)
+websocat ws://127.0.0.1:8000/ws/chat
+```
+
+**Initial Response:**
+```json
+{"type":"session","session_id":"uuid-here"}
+```
+
+#### Step 1: Search for Products
+Send (type JSON on one line):
+```json
+{"type":"user_query","content":"I want a gaming laptop under $1500"}
+```
+
+**Expected:**
+```json
+{
+  "type":"search_results",
+  "data": {
+    "parsed_query": {...},
+    "results": [...],
+    "message": "Found 3 matches..."
+  }
+}
+```
+
+#### Step 2: Apply Refinement
+If you receive a `suggestion` field (when <3 results found):
+```json
+{"type":"apply_refinement","new_budget":1200}
+```
+
+**Expected:**
+```json
+{"type":"updated_results","data":{...}}
+```
+
+#### Step 3: Negotiate on a Listing
+Pick a `listing_id` from search results:
+```json
+{"type":"negotiate","listing_id":5}
+```
+
+**Expected:**
+```json
+{
+  "type":"negotiation_result",
+  "data":{
+    "agreed": true,
+    "final_price": 1150,
+    "turns": [
+      {"round":1,"agent":"buyer","offer":950,"message":"..."},
+      {"round":2,"agent":"seller","offer":1200,"message":"..."}
+    ]
+  }
+}
+```
+
+#### Step 4: Reset Session
+```json
+{"type":"reset"}
+```
+
+**Expected:**
+```json
+{"type":"reset_ack","message":"Session reset."}
+```
+
+### Special Chat Features
+
+#### Clarification for Vague Queries
+When query confidence < 0.7:
+```json
+{"type":"user_query","content":"I want something"}
+```
+
+**Expected:**
+```json
+{
+  "type":"clarify",
+  "message":"I'm not fully sure what you want yet. Can you clarify budget/specs/category? (confidence: 0.30)"
+}
+```
+
+#### Proactive Suggestions for Poor Results
+When 0-2 results are found:
+```json
+{"type":"user_query","content":"I want a MacBook Pro under $200"}
+```
+
+**Expected:**
+```json
+{
+  "type":"search_results",
+  "data":{...},
+  "suggestion":"No MacBook Pros under $200. Typical prices are $1200-$2000. Try increasing budget to $1500?"
+}
+```
+
+#### Session Persistence (Redis)
+Sessions persist for 1 hour and survive server restarts:
+1. Search for something, note the `session_id`
+2. Disconnect (Ctrl+C)
+3. Reconnect: `websocat ws://127.0.0.1:8000/ws/chat`
+4. Send: `{"type":"resume","session_id":"your-uuid"}`
+
+**Expected:**
+```json
+{"type":"resumed","session_id":"your-uuid"}
+```
+
+#### Rate Limiting
+Maximum 10 searches per minute per session. Exceeding this returns:
+```json
+{"type":"error","message":"Rate limit exceeded. Try again later."}
+```
+
+## Troubleshooting
+
+### WebSocket 404 Error
+If you get `Received unexpected status code (404 Not Found)`:
+```sh
+pip install 'uvicorn[standard]'
+# or
+pip install websockets
+```
+Then restart the server.
+
+### Redis Connection Error
+If you see `redis.exceptions.ConnectionError`:
+```sh
+redis-server  # Start Redis
+redis-cli ping  # Verify (should return PONG)
+```
+
+### Empty Search Results
+Delete `app.db` and restart server to re-seed listings.
 
 ### How it Works
 1. **Listing**: The negotiation starts with the Seller's `listing_price`.
