@@ -5,7 +5,7 @@ class SellerAgent(BaseAgent):
         super().__init__(role="seller", constraints={"min_price": min_price})
         self.min_price = min_price
 
-    def build_prompt(self, context: str, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> str:
+    def build_prompt(self,last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> str:
         urgency_msg = ""
         if rounds_left <= 2:
             urgency_msg = "You are running out of patience. You MUST become aggressive. If the current offer is within 5% of your target, ACCEPT IT immediately."
@@ -20,7 +20,6 @@ class SellerAgent(BaseAgent):
             f"Your goal is to sell the product for the highest possible price. "
             f"Your absolute minimum acceptable price is ${self.min_price}. "
             f"Market Context: {market_context} "
-            f"The negotiation context so far: {context}. "
             f"The last offer from the buyer was ${last_offer}. "
             f"You have {rounds_left} rounds of negotiation patience left. {urgency_msg} "
             f"Strategy: Start high and concede slowly. "
@@ -43,7 +42,7 @@ class SellerAgent(BaseAgent):
             f"IMPORTANT: Do not explicitly reveal your minimum price in your messages. Negotiate hard."
         )
 
-    def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> dict:
+    def propose(self, context: list[dict[str,str]], last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> dict:
         result = super().propose(context, last_offer, rounds_left, market_context, product_description)
         
         # Ensure last_offer is a valid number before comparing
@@ -56,7 +55,7 @@ class SellerAgent(BaseAgent):
         seller_previous_offer = None
         if context:
             # Parse context to find the last seller offer
-            lines = context.strip().split('\n')
+            lines = context[-1]["message"]
             for line in reversed(lines):
                 if line.startswith('Seller offers $'):
                     try:
@@ -87,7 +86,7 @@ class SellerAgent(BaseAgent):
         if result["offer"] < self.min_price:
             result["offer"] = self.min_price
             # Overwrite the message to prevent confusion
-            result["message"] = f"I cannot go any lower than this."
+            result["message"] = "I cannot go any lower than this."
 
         # Sanitization: Prevent leaking min price or specific phrases
         msg_lower = result["message"].lower()
