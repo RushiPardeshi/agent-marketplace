@@ -39,6 +39,12 @@ class MultiAgentNegotiationService:
         # Collect listing IDs
         listing_ids = list(set(s.listing_id for s in request.sellers))
         
+        # Auto-fetch listing prices from DB if not provided
+        for seller in request.sellers:
+            if seller.listing_price is None:
+                product_info = self._get_product_info(seller.listing_id)
+                seller.listing_price = product_info.get("listing_price", 0.0)
+        
         # Build buyer and seller config maps
         buyers = {b.agent_id: b for b in request.buyers}
         sellers = {s.agent_id: s for s in request.sellers}

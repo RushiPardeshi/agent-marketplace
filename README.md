@@ -121,11 +121,13 @@ curl -X POST http://localhost:8000/multi-agent/sessions \
       {"agent_id": "buyer_2", "max_price": 70, "interested_seller_ids": ["seller_2"]}
     ],
     "sellers": [
-      {"agent_id": "seller_1", "listing_id": 1, "min_price": 700, "listing_price": 850},
-      {"agent_id": "seller_2", "listing_id": 2, "min_price": 40, "listing_price": 60}
+      {"agent_id": "seller_1", "listing_id": 1, "min_price": 700},
+      {"agent_id": "seller_2", "listing_id": 2, "min_price": 40}
     ]
   }' | jq .
 ```
+
+**Note:** The `listing_price` is automatically fetched from the database using `listing_id`. You can optionally override it by specifying `listing_price` in the seller config.
 
 **Response:**
 ```json

@@ -121,7 +121,7 @@ class SellerConfig(BaseModel):
     agent_id: str
     listing_id: int
     min_price: float = Field(..., gt=0)
-    listing_price: float = Field(..., gt=0)
+    listing_price: Optional[float] = Field(None, gt=0)  # Auto-fetched from DB if not provided
     initial_offer: Optional[float] = None
     patience: Optional[int] = None
     active: bool = True  # False once seller makes a deal
