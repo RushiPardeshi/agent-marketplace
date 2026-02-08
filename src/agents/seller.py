@@ -60,9 +60,17 @@ class SellerAgent(BaseAgent):
             for line in reversed(lines):
                 if line.startswith('Seller offers $'):
                     try:
-                        seller_previous_offer = float(line.split('$')[1].split(':')[0])
+                        # Check if this line has a correction suffix "(Corrected to $X)"
+                        if "(Corrected to $" in line:
+                            # Extract the corrected value
+                            corrected_part = line.split("(Corrected to $")[1]
+                            seller_previous_offer = float(corrected_part.split(")")[0])
+                        else:
+                            # Extract the original value
+                            seller_previous_offer = float(line.split('$')[1].split(':')[0])
                         break
                     except (ValueError, IndexError):
+                        # If the line is not in the expected format, ignore it and continue searching
                         pass
 
         # Programmatic safeguard: Seller should NEVER increase their offer

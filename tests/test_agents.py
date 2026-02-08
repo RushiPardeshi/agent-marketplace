@@ -154,3 +154,43 @@ def test_seller_message_sanitization(MockOpenAI):
     result = agent.propose("context", 900, rounds_left=5, market_context="")
     assert "as low as I can go" in result["message"]
     assert "minimum" not in result["message"]
+
+@patch("src.agents.base.OpenAI")
+def test_seller_monotonic_price_safeguard(MockOpenAI):
+    # Test safeguard: Seller tries to increase their offer from previous round
+    mock_client = MockOpenAI.return_value
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 1050, "message": "Actually, I want more."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
+    
+    agent = SellerAgent(min_price=900)
+    # Context shows seller previously offered 1000
+    context = "Buyer offers $950: I can do this.\nSeller offers $1000: Best price."
+    result = agent.propose(context, 950, rounds_left=5, market_context="")
+    
+    # Should be clamped to previous seller offer
+    assert result["offer"] == 1000
+    assert "holding firm at $1000" in result["message"]
+
+@patch("src.agents.base.OpenAI")
+def test_seller_monotonic_price_with_correction(MockOpenAI):
+    # Test safeguard: Seller tries to increase from a corrected offer
+    mock_client = MockOpenAI.return_value
+    
+    mock_output = type("obj", (), {})()
+    mock_output.model_dump = lambda: {"offer": 1100, "message": "I need more."}
+    
+    mock_response = type("obj", (), {"output_parsed": mock_output})
+    mock_client.responses.parse.return_value = mock_response
+    
+    agent = SellerAgent(min_price=900)
+    # Context shows seller offer was corrected to 1050
+    context = "Buyer offers $900: Starting low.\nSeller offers $950: My price. (Corrected to $1050)"
+    result = agent.propose(context, 900, rounds_left=5, market_context="")
+    
+    # Should be clamped to the corrected offer (1050), not the original (950)
+    assert result["offer"] == 1050
+    assert "holding firm at $1050" in result["message"]
