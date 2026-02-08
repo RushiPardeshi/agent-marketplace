@@ -10,6 +10,9 @@ Proof of Concept: Can a seller AI agent and a buyer AI agent reach an agreement 
 - **Dynamic Patience**: The number of negotiation rounds is dynamically calculated based on market conditions (supply/demand).
 - **Market Leverage**: Agents adjust their strategy (aggressive vs. stubborn) based on the number of active competitors and interested buyers.
 - **Turn-based**: Fully automated negotiation loop that ends when a deal is struck or patience runs out.
+- **Concession Caps**: Agents make controlled, realistic concessions based on leverage and round urgency.
+- **Stall Resolution**: If both sides stall repeatedly, the system proposes a final midpoint offer.
+- **Walk-away Logic**: If the buyer repeatedly hits their max and the seller target is still unmet, the seller ends the negotiation (unless seller leverage is low).
 - **Testing**: Automated tests with mocked LLM calls for fast, free, deterministic testing.
 - **Search Copilot**: AI-powered natural language search with semantic matching using OpenAI embeddings
 - **WebSocket Chat**: Real-time conversational interface for search, refinement suggestions, and negotiation
@@ -91,6 +94,8 @@ Notes:
 - If the human is the buyer, you only need to provide `seller_min_price` (buyer max is not required).
 - If the human is the seller, you only need to provide `buyer_max_price` (seller min is not required).
 - The transcript is printed and saved to `./negotiation_outputs/` by default (or pass `--output-path`).
+- Use `--no-save` to skip writing the transcript file.
+- Use `--noninteractive` to require all inputs via flags (no prompts).
 
 ## Marketplace Listings (SQLite)
 
@@ -353,7 +358,9 @@ Delete `app.db` and restart server to re-seed listings.
    - The **Buyer Agent** (aware of its max budget) makes a counter-offer below the listing price.
    - The **Seller Agent** (aware of its min floor) responds with a new offer.
    - Agents use strategies like "lowballing" or "holding firm" depending on their calculated leverage.
-4. **Consensus**: The negotiation continues until one agent accepts the other's offer, or until an agent's patience runs out (deadlock).
+4. **Controlled Concessions**: Agents limit how much they move per round with slight variation to avoid robotic steps.
+5. **Walk-away**: If the buyer repeats their max offer and it is still below the seller target, the seller ends the negotiation (except in low-demand scenarios where the seller may accept).
+6. **Consensus**: The negotiation continues until one agent accepts the other's offer, a final midpoint is proposed after stalls, or patience runs out (deadlock).
 5. **Result**: The API returns the full transcript, the final price, and the reason for the agreement (or failure).
 
 ## Testing

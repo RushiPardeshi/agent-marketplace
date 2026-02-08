@@ -55,14 +55,13 @@ def _state_to_redis_dict(state: Dict[str, Any]) -> Dict[str, Any]:
 
     parsed = out.get("parsed")
     if isinstance(parsed, ParsedQuery):
-        # Pydantic v1: dict(); v2: model_dump()
-        out["parsed"] = parsed.dict() if hasattr(parsed, "dict") else parsed.model_dump()
+        out["parsed"] = parsed.model_dump() if hasattr(parsed, "model_dump") else parsed.dict()
 
     results = out.get("results")
     if isinstance(results, list) and results and isinstance(results[0], SearchResult):
         ser = []
         for r in results:
-            ser.append(r.dict() if hasattr(r, "dict") else r.model_dump())
+            ser.append(r.model_dump() if hasattr(r, "model_dump") else r.dict())
         out["results"] = ser
 
     return out
@@ -137,20 +136,25 @@ def health():
 def negotiate(
     request: NegotiationRequest = Body(
         ...,
-        example={
-            "product": {
-                "name": "Laptop",
-                "description": "Lightly used, includes charger",
-                "listing_price": 1200,
-            },
-            "seller_min_price": 900,
-            "buyer_max_price": 1100,
-            "active_competitor_sellers": 1,
-            "active_interested_buyers": 5,
-            "initial_seller_offer": None,
-            "initial_buyer_offer": None,
-            "seller_patience": None,
-            "buyer_patience": None,
+        examples={
+            "default": {
+                "summary": "Basic negotiation request",
+                "value": {
+                    "product": {
+                        "name": "Laptop",
+                        "description": "Lightly used, includes charger",
+                        "listing_price": 1200,
+                    },
+                    "seller_min_price": 900,
+                    "buyer_max_price": 1100,
+                    "active_competitor_sellers": 1,
+                    "active_interested_buyers": 5,
+                    "initial_seller_offer": None,
+                    "initial_buyer_offer": None,
+                    "seller_patience": None,
+                    "buyer_patience": None,
+                },
+            }
         },
     )
 ):
@@ -164,18 +168,23 @@ def negotiate(
 # New endpoint: Negotiate for a specific listing, ensuring product fields match the listing in DB.
 @app.post("/listings/{listing_id}/negotiate", response_model=NegotiationResult)
 def negotiate_for_listing(
-    listing_id: int = Path(..., example=8),
+    listing_id: int = Path(..., examples={"default": {"value": 8}}),
     request: ListingNegotiationRequest = Body(
         ...,
-        example={
-            "seller_min_price": 700,
-            "buyer_max_price": 900,
-            "active_competitor_sellers": 1,
-            "active_interested_buyers": 2,
-            "initial_seller_offer": None,
-            "initial_buyer_offer": None,
-            "seller_patience": None,
-            "buyer_patience": None,
+        examples={
+            "default": {
+                "summary": "Negotiation against a listing",
+                "value": {
+                    "seller_min_price": 700,
+                    "buyer_max_price": 900,
+                    "active_competitor_sellers": 1,
+                    "active_interested_buyers": 2,
+                    "initial_seller_offer": None,
+                    "initial_buyer_offer": None,
+                    "seller_patience": None,
+                    "buyer_patience": None,
+                },
+            }
         },
     ),
     db: Session = Depends(get_db),
@@ -238,11 +247,16 @@ def create_listing(payload: ListingCreate, db: Session = Depends(get_db)):
 def search_products(
     request: SearchRequest = Body(
         ...,
-        example={
-            "query": "I need a gaming laptop with at least 16GB RAM under $1500",
-            "user_budget": 1500.0,
-            "top_k": 5,
-            "use_vector": True
+        examples={
+            "default": {
+                "summary": "Search query",
+                "value": {
+                    "query": "I need a gaming laptop with at least 16GB RAM under $1500",
+                    "user_budget": 1500.0,
+                    "top_k": 5,
+                    "use_vector": True
+                },
+            }
         },
     ),
     db: Session = Depends(get_db),
@@ -348,7 +362,7 @@ async def chat_endpoint(websocket: WebSocket):
                             "Can you clarify budget/specs/category? "
                             f"(confidence: {getattr(parsed, 'parse_confidence', 0.0):.2f})"
                         ),
-                        "parsed_query": parsed.dict() if hasattr(parsed, "dict") else None,
+                        "parsed_query": parsed.model_dump() if hasattr(parsed, "model_dump") else None,
                     })
                     state["state"] = "clarifying"
                     state["parsed"] = parsed
@@ -382,20 +396,20 @@ async def chat_endpoint(websocket: WebSocket):
                     suggestion = await run_in_threadpool(generate_refinement_suggestion, parsed, "no_results")
                     await websocket.send_json({
                         "type": "search_results",
-                        "data": response.dict(),
+                        "data": response.model_dump() if hasattr(response, "model_dump") else response.dict(),
                         "suggestion": suggestion,
                     })
                 elif len(response.results) < 3:
                     suggestion = await run_in_threadpool(generate_refinement_suggestion, parsed, "few_results")
                     await websocket.send_json({
                         "type": "search_results",
-                        "data": response.dict(),
+                        "data": response.model_dump() if hasattr(response, "model_dump") else response.dict(),
                         "suggestion": suggestion,
                     })
                 else:
                     await websocket.send_json({
                         "type": "search_results",
-                        "data": response.dict(),
+                        "data": response.model_dump() if hasattr(response, "model_dump") else response.dict(),
                     })
 
             elif msg_type == "apply_refinement":
@@ -440,7 +454,7 @@ async def chat_endpoint(websocket: WebSocket):
 
                 await websocket.send_json({
                     "type": "updated_results",
-                    "data": response.dict(),
+                    "data": response.model_dump() if hasattr(response, "model_dump") else response.dict(),
                 })
 
                 # Save state
@@ -497,7 +511,7 @@ async def chat_endpoint(websocket: WebSocket):
 
                 await websocket.send_json({
                     "type": "negotiation_result",
-                    "data": neg_result.dict(),
+                    "data": neg_result.model_dump() if hasattr(neg_result, "model_dump") else neg_result.dict(),
                 })
 
             elif msg_type == "reset":

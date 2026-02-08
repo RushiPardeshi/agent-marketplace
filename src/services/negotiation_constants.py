@@ -1,0 +1,18 @@
+SELLER_TARGET_K = {
+    "high": 0.85,
+    "medium": 0.60,
+    "low": 0.25,
+}
+
+CONCESSION_PCT = {
+    "high": 0.01,
+    "medium": 0.035,
+    "low": 0.08,
+}
+
+FINAL_ROUNDS_BOOST = 2.0
+MIN_CONCESSION_PCT = 0.005
+MIN_CONCESSION_ABS = 1.0
+STALL_THRESHOLD = 2
+FIRST_SELLER_ACCEPT_BLOCK_ROUND = 2
+AUTO_ACCEPT_LEVERAGE = {"low"}

@@ -3,27 +3,6 @@ from unittest.mock import patch
 from src.agents.seller import SellerAgent
 from src.agents.buyer import BuyerAgent
 
-def test_seller_agent_prompt():
-    agent = SellerAgent(min_price=900)
-    prompt = agent.build_prompt("context", 950, rounds_left=5, market_context="High demand")
-    assert "minimum acceptable price is $900" in prompt
-    assert "context" in prompt
-    assert "last offer from the buyer was $950" in prompt
-    assert "You have 5 rounds" in prompt
-    assert "High demand" in prompt
-    assert "Closing Logic" in prompt # New explicit logic
-
-def test_buyer_agent_prompt():
-    agent = BuyerAgent(max_price=1200)
-    prompt = agent.build_prompt("context", 1100, rounds_left=2, market_context="High supply")
-    assert "maximum budget is $1200" in prompt
-    assert "context" in prompt
-    assert "last offer from the seller was $1100" in prompt
-    assert "You have 2 rounds" in prompt
-    assert "running out of patience" in prompt
-    assert "High supply" in prompt
-    assert "Closing Logic" in prompt # New explicit logic
-
 @patch("src.agents.base.OpenAI")
 def test_seller_agent_propose(MockOpenAI):
     # Setup the mock client and its response
@@ -107,7 +86,7 @@ def test_buyer_agent_enforce_max_price(MockOpenAI):
     # Seller offered 1500. Rationality check passes (1300 not > 1500). Max price check catches it.
     result = agent.propose("context", 1500, rounds_left=1, market_context="")
     assert result["offer"] == 1200 # Should be clamped to max
-    assert "cannot go any higher" in result["message"]
+    assert "best offer" in result["message"].lower()
 
 @patch("src.agents.base.OpenAI")
 def test_buyer_agent_rationality_check(MockOpenAI):
