@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException, Depends, Body, Path, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from src.services.negotiation import NegotiationService
+from src.agents.seller import SellerAgent
+from src.agents.buyer import BuyerAgent
 from src.services.search import SearchService
 from sqlalchemy.orm import Session
 from src.db import Base, engine, get_db, SessionLocal
@@ -47,6 +49,36 @@ suggestion_client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Redis for chat state persistence
 redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+# In-memory negotiation rooms for realtime chat
+negotiation_rooms: Dict[int, Dict[str, Any]] = {}
+
+def _room_for_listing(listing_id: int) -> Dict[str, Any]:
+    if listing_id not in negotiation_rooms:
+        negotiation_rooms[listing_id] = {
+            "turns": [],
+            "buyers": set(),
+            "sellers": set(),
+            "buyer_max_price": None,
+            "seller_min_price": None,
+            "buyer_patience": None,
+            "seller_patience": None,
+            "buyer_type": "human",
+            "seller_type": "human",
+        }
+    return negotiation_rooms[listing_id]
+
+def _build_context(turns: list[Dict[str, Any]]) -> str:
+    lines = []
+    for turn in turns:
+        agent = turn.get("agent")
+        offer = turn.get("offer")
+        message = turn.get("message", "")
+        if agent == "buyer":
+            lines.append(f"Buyer offers ${offer}: {message}")
+        elif agent == "seller":
+            lines.append(f"Seller offers ${offer}: {message}")
+    return "\n".join(lines)
 
 # Helper functions for (de)serializing chat state with Pydantic models
 def _state_to_redis_dict(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -192,14 +224,20 @@ def negotiate_for_listing(
     )
 
     # Build the full NegotiationRequest internally
+    seller_min = request.seller_min_price
+    if seller_min is None:
+        seller_min = float(listing.seller_min_price) if listing.seller_min_price is not None else float(listing.price) * 0.8
+
     full_req = NegotiationRequest(
         product=product,
-        seller_min_price=request.seller_min_price,
+        seller_min_price=seller_min,
         buyer_max_price=request.buyer_max_price,
         active_competitor_sellers=request.active_competitor_sellers,
         active_interested_buyers=request.active_interested_buyers,
         initial_seller_offer=request.initial_seller_offer,
         initial_buyer_offer=request.initial_buyer_offer,
+            initial_seller_message=request.initial_seller_message,
+            initial_buyer_message=request.initial_buyer_message,
         seller_patience=request.seller_patience,
         buyer_patience=request.buyer_patience,
     )
@@ -228,11 +266,20 @@ def get_listing(listing_id: int, db: Session = Depends(get_db)):
 
 @app.post("/listings", response_model=ListingOut)
 def create_listing(payload: ListingCreate, db: Session = Depends(get_db)):
-    listing = Listing(**payload.model_dump())
+    data = payload.model_dump()
+    if data.get("seller_min_price") is None:
+        data["seller_min_price"] = float(data["price"]) * 0.8
+    listing = Listing(**data)
     db.add(listing)
     db.commit()
     db.refresh(listing)
-    return listing
+    return ListingOut(
+        id=listing.id,
+        title=listing.title,
+        description=listing.description,
+        price=listing.price,
+        category=listing.category,
+    )
 
 @app.post("/search", response_model=SearchResponse)
 def search_products(
@@ -524,6 +571,141 @@ async def chat_endpoint(websocket: WebSocket):
         # Do not delete chat state on disconnect; Redis TTL (1 hour) will expire it.
         # This enables persistence across reconnects/restarts when the client reuses session_id.
         await run_in_threadpool(save_chat_state, session_id, state)
+
+@app.websocket("/ws/negotiations/{listing_id}")
+async def negotiations_ws(websocket: WebSocket, listing_id: int):
+    await websocket.accept()
+    room = _room_for_listing(listing_id)
+
+    # Join message
+    try:
+        join_raw = await websocket.receive_text()
+        join_msg = json.loads(join_raw)
+    except Exception:
+        await websocket.send_json({"type": "error", "message": "Invalid join payload"})
+        await websocket.close()
+        return
+
+    role = join_msg.get("role")
+    name = join_msg.get("name") or role
+    if role not in {"buyer", "seller"}:
+        await websocket.send_json({"type": "error", "message": "role must be buyer or seller"})
+        await websocket.close()
+        return
+
+    counterparty = join_msg.get("counterparty", "human")
+    if role == "buyer":
+        room["buyers"].add(websocket)
+        room["buyer_type"] = "human"
+        if counterparty == "agent":
+            room["seller_type"] = "agent"
+        buyer_max = join_msg.get("buyer_max_price")
+        if buyer_max:
+            room["buyer_max_price"] = float(buyer_max)
+    else:
+        room["sellers"].add(websocket)
+        room["seller_type"] = "human"
+        if counterparty == "agent":
+            room["buyer_type"] = "agent"
+        seller_min = join_msg.get("seller_min_price")
+        if seller_min:
+            room["seller_min_price"] = float(seller_min)
+
+    # Load listing for agent replies
+    listing = None
+    db = SessionLocal()
+    try:
+        listing = db.query(Listing).filter(Listing.id == listing_id).first()
+    finally:
+        db.close()
+
+    await websocket.send_json({"type": "state", "turns": room["turns"]})
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "message": "Invalid JSON"})
+                continue
+
+            if msg.get("type") != "offer":
+                await websocket.send_json({"type": "error", "message": "Unknown message type"})
+                continue
+
+            offer = msg.get("offer")
+            message = msg.get("message", "")
+            if offer is None:
+                await websocket.send_json({"type": "error", "message": "Offer is required"})
+                continue
+
+            turn = {
+                "round": len(room["turns"]) + 1,
+                "agent": role,
+                "offer": float(offer),
+                "message": message,
+                "name": name,
+            }
+            room["turns"].append(turn)
+
+            # Broadcast turn
+            for ws in list(room["buyers"] | room["sellers"]):
+                await ws.send_json({"type": "turn", "turn": turn})
+
+            # Agent response if enabled
+            if role == "buyer" and room["seller_type"] == "agent" and listing:
+                agent = SellerAgent(
+                    float(room["seller_min_price"] or (listing.price * 0.8))
+                )
+                context = _build_context(room["turns"])
+                offer_data = agent.propose(
+                    context,
+                    float(offer),
+                    rounds_left=5,
+                    market_context=f"You have medium leverage. (Demand: {len(room['buyers'])} interested buyers).",
+                    product_description=listing.description or listing.title,
+                )
+                seller_turn = {
+                    "round": len(room["turns"]) + 1,
+                    "agent": "seller",
+                    "offer": float(offer_data["offer"]),
+                    "message": offer_data["message"],
+                    "name": "Seller",
+                }
+                room["turns"].append(seller_turn)
+                for ws in list(room["buyers"] | room["sellers"]):
+                    await ws.send_json({"type": "turn", "turn": seller_turn})
+
+            if role == "seller" and room["buyer_type"] == "agent" and listing:
+                buyer_max = room["buyer_max_price"] or float(listing.price)
+                agent = BuyerAgent(float(buyer_max))
+                context = _build_context(room["turns"])
+                offer_data = agent.propose(
+                    context,
+                    float(offer),
+                    rounds_left=5,
+                    market_context=f"You have medium leverage. (Competition: {len(room['sellers'])} other sellers).",
+                    product_description=listing.description or listing.title,
+                )
+                buyer_turn = {
+                    "round": len(room["turns"]) + 1,
+                    "agent": "buyer",
+                    "offer": float(offer_data["offer"]),
+                    "message": offer_data["message"],
+                    "name": "Buyer",
+                }
+                room["turns"].append(buyer_turn)
+                for ws in list(room["buyers"] | room["sellers"]):
+                    await ws.send_json({"type": "turn", "turn": buyer_turn})
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if role == "buyer":
+            room["buyers"].discard(websocket)
+        else:
+            room["sellers"].discard(websocket)
 
 def generate_refinement_suggestion(parsed: Any, reason: str) -> str:
     """Use LLM to suggest refinements based on poor results."""
