@@ -27,10 +27,7 @@ from typing import Dict, Any
 from starlette.concurrency import run_in_threadpool
 import time
 import redis
-import warnings
-warnings.filterwarnings("ignore")
 load_dotenv()
-
 
 app = FastAPI()
 
