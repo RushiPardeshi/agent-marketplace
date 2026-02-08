@@ -10,11 +10,13 @@ class BuyerAgent(BaseAgent):
         if rounds_left <= 2:
             urgency_msg = "You are running out of patience. If the seller's offer is within 5% of your target, ACCEPT IT immediately."
         if rounds_left == 1:
-            urgency_msg = "FINAL ROUND. If the offer is within your budget, ACCEPT IT. Do not risk losing the item."
+            urgency_msg = "FINAL ROUND. If the offer is within your budget, ACCEPT IT. Do not risk losing thlast e item."
 
         return (
             f"You are an expert buyer negotiating the price of a product. "
             f"Product Description: {product_description} "
+            f"CRITICAL RULE: As a buyer, you can only INCREASE or MAINTAIN after your first offer, NEVER DECREASE it. "
+            f"Review your previous offers in the context carefully and ensure your new offer is higher or equal to your last offer. "
             f"Your goal is to purchase the product for the lowest possible price. "
             f"Your absolute maximum budget is ${self.max_price}. "
             f"Market Context: {market_context} "

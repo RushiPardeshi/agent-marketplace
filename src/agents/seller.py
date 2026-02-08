@@ -15,6 +15,8 @@ class SellerAgent(BaseAgent):
         return (
             f"You are an expert seller negotiating the price of a product. "
             f"Product Description: {product_description} "
+            f"CRITICAL RULE: As a seller, you can only DECREASE or MAINTAIN your price, NEVER INCREASE it. "
+            f"Review your previous offers in the context carefully and ensure your new offer is lower or equal to your last offer. "
             f"Your goal is to sell the product for the highest possible price. "
             f"Your absolute minimum acceptable price is ${self.min_price}. "
             f"Market Context: {market_context} "
@@ -49,6 +51,24 @@ class SellerAgent(BaseAgent):
             valid_last_offer = float(last_offer)
         except (ValueError, TypeError):
             valid_last_offer = 0.0
+
+        # Extract seller's own previous offer from context
+        seller_previous_offer = None
+        if context:
+            # Parse context to find the last seller offer
+            lines = context.strip().split('\n')
+            for line in reversed(lines):
+                if line.startswith('Seller offers $'):
+                    try:
+                        seller_previous_offer = float(line.split('$')[1].split(':')[0])
+                        break
+                    except (ValueError, IndexError):
+                        pass
+
+        # Programmatic safeguard: Seller should NEVER increase their offer
+        if seller_previous_offer is not None and result["offer"] > seller_previous_offer:
+            result["offer"] = seller_previous_offer
+            result["message"] = f"I'm holding firm at ${seller_previous_offer}."
 
         # Programmatic safeguard: Rationality check - Don't offer less than the buyer is willing to pay
         if valid_last_offer > 0 and result["offer"] < valid_last_offer:
