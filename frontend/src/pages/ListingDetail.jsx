@@ -49,10 +49,13 @@ export default function ListingDetail() {
           role,
           name: role === "buyer" ? buyerName : sellerName,
           delegate,
-          buyer_max_price: Number.isFinite(Number(buyerMaxPrice))
-            ? Number(buyerMaxPrice)
-            : buyerBudget || undefined,
-          seller_min_price: sellerMinPrice ? Number(sellerMinPrice) : undefined,
+          buyer_max_price:
+            role === "buyer" && delegate
+              ? Number.isFinite(Number(buyerMaxPrice))
+                ? Number(buyerMaxPrice)
+                : buyerBudget || undefined
+              : undefined,
+          seller_min_price: role === "seller" && delegate && sellerMinPrice ? Number(sellerMinPrice) : undefined,
         })
       );
     };
@@ -129,21 +132,23 @@ export default function ListingDetail() {
         </select>
 
         <div className="grid two" style={{ marginTop: "12px" }}>
-          {role === "seller" && (
+          {role === "seller" && delegate && (
             <div>
               <label className="label">Seller min price</label>
               <input className="input" value={sellerMinPrice} onChange={(e) => setSellerMinPrice(e.target.value)} />
             </div>
           )}
-          <div>
-            <label className="label">Buyer max price</label>
-            <input
-              className="input"
-              value={buyerMaxPrice}
-              onChange={(e) => setBuyerMaxPrice(e.target.value)}
-              placeholder={buyerBudget ? String(buyerBudget) : ""}
-            />
-          </div>
+          {role === "buyer" && delegate && (
+            <div>
+              <label className="label">Buyer max price</label>
+              <input
+                className="input"
+                value={buyerMaxPrice}
+                onChange={(e) => setBuyerMaxPrice(e.target.value)}
+                placeholder={buyerBudget ? String(buyerBudget) : ""}
+              />
+            </div>
+          )}
         </div>
         {error && <p>{error}</p>}
       </div>
