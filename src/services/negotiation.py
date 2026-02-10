@@ -50,7 +50,7 @@ class NegotiationService:
         buyer = BuyerAgent(req.buyer_max_price)
         buyer_is_agent = True
         turns = []
-        context = ""
+        context = []
         round_num = 1
         
         # Determine Market Context
@@ -131,7 +131,7 @@ class NegotiationService:
                 
                 # Update State
                 turns.append(NegotiationTurn(round=round_num, agent="buyer", offer=offer, message=message))
-                context += f"\nBuyer offers ${offer}: {message}"
+                context.append({"agent":"buyer","message":message})
 
                 if last_buyer_offer is not None and abs(offer - last_buyer_offer) < 0.01:
                     buyer_stall_count += 1
@@ -226,7 +226,7 @@ class NegotiationService:
                         message = f"I can meet you at ${offer}."
                 
                 turns.append(NegotiationTurn(round=round_num, agent="seller", offer=offer, message=message))
-                context += f"\nSeller offers ${offer}: {message}"
+                context.append({"agent":"seller","message":message})
                 
                 if abs(offer - last_offer) < 0.01:
                     # Seller is trying to accept. Check if it meets their target.
@@ -249,7 +249,7 @@ class NegotiationService:
                         # Update local variables for next loop
                         offer = counter_offer
                         last_offer = offer
-                        context += f" (Corrected to ${offer})"
+                        context[-1]["message"] = f"I can't do that, but I can meet you here: ${offer}"
 
                         # Track stalling: if forced counter is same as previous seller offer, increment stall
                         if last_seller_offer is not None and abs(counter_offer - last_seller_offer) < 0.01:
@@ -313,6 +313,11 @@ class NegotiationService:
             
         if not agreed:
             reason = "Negotiation ended without agreement (patience exhausted)."
+
+        # Just for debugging
+        with open("context_log.txt","w") as file:
+            for item in context:
+                file.write(f"""{item["agent"]} : {item['message'] + '\n'}""")
             
         return NegotiationResult(
             agreed=agreed,
@@ -337,7 +342,7 @@ class NegotiationService:
         buyer_is_agent = buyer is not None
 
         turns = []
-        context = ""
+        context = []
         round_num = 1
 
         seller_leverage = self._determine_leverage("seller", req)
@@ -404,7 +409,7 @@ class NegotiationService:
                 turns.append(NegotiationTurn(round=round_num, agent="buyer", offer=offer, message=message))
                 if on_turn:
                     on_turn(turns[-1])
-                context += f"\nBuyer offers ${offer}: {message}"
+                context.append({"agent":"buyer","message":message})
 
                 if abs(offer - last_offer) < 0.01:
                     agreed = True
@@ -458,7 +463,8 @@ class NegotiationService:
                 turns.append(NegotiationTurn(round=round_num, agent="seller", offer=offer, message=message))
                 if on_turn:
                     on_turn(turns[-1])
-                context += f"\nSeller offers ${offer}: {message}"
+                context.append({"agent":"seller","message":message})
+
 
                 if abs(offer - last_offer) < 0.01:
                     if seller_is_agent:
@@ -474,7 +480,7 @@ class NegotiationService:
                             turns[-1].message = "I can't do that, but I can meet you here."
                             offer = counter_offer
                             last_offer = offer
-                            context += f" (Corrected to ${offer})"
+                            context[-1]["message"] = f"I can't do that, but I can meet you here : ${offer}"
 
                             seller_patience -= 1
                             if seller_is_agent:
@@ -498,6 +504,7 @@ class NegotiationService:
 
         if not agreed:
             reason = "Negotiation ended without agreement (patience exhausted)."
+
 
         return NegotiationResult(
             agreed=agreed,

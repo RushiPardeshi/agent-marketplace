@@ -5,7 +5,7 @@ class BuyerAgent(BaseAgent):
         super().__init__(role="buyer", constraints={"max_price": max_price})
         self.max_price = max_price
 
-    def build_prompt(self, context: str, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> str:
+    def build_prompt(self, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> str:
         urgency_msg = ""
         if rounds_left <= 2:
             urgency_msg = "You are running out of patience. If the seller's offer is within 5% of your target, ACCEPT IT immediately."
@@ -20,7 +20,6 @@ class BuyerAgent(BaseAgent):
             f"Your goal is to purchase the product for the lowest possible price. "
             f"Your absolute maximum budget is ${self.max_price}. "
             f"Market Context: {market_context} "
-            f"The negotiation context so far: {context}. "
             f"The last offer from the seller was ${last_offer}. "
             f"You have {rounds_left} rounds of negotiation patience left. {urgency_msg} "
             f"Strategy: Start significantly lower than the seller's offer. "
@@ -43,7 +42,7 @@ class BuyerAgent(BaseAgent):
             f"IMPORTANT: Do not explicitly reveal your maximum budget in your messages. Negotiate hard."
         )
 
-    def propose(self, context: str, last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> dict:
+    def propose(self, context: list[dict[str,str]], last_offer: float, rounds_left: int, market_context: str = "", product_description: str = "") -> dict:
         result = super().propose(context, last_offer, rounds_left, market_context, product_description)
         
         # Ensure last_offer is a valid number before comparing
